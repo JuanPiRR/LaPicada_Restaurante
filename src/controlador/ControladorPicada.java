@@ -201,6 +201,57 @@ public class ControladorPicada {
         pedidoActual = null;
         guardarDatosPersistentes();
     }
+    //Metodos para gestion de Insumos
+    //Gestion de Insumos
+    public void agregarInsumos(String id, String nombre, String categoria, String unidadMedida, int stockMinimo, int stockActual, double precioUnitario){
+        Insumo nuevoInsumo = new Insumo(id,nombre,categoria,unidadMedida,stockMinimo,stockActual,precioUnitario);
+        insumos.add(nuevoInsumo);
+        guardarDatosPersistentes();
+    }
+
+    public List<Insumo> getInsumos(){return insumos;}
+
+    public List<Insumo> getInsumosConBajoStock(){
+        return insumos.stream().filter(Insumo :: necesitaReposicion).collect(Collectors.toList());
+    }
+
+    //Gestion de Proveedores
+    public void agregarProveedor(String id, String nombre, String telefono, String email, String tipoProducto){
+        Proveedor nuevoProveedor = new Proveedor(id,nombre,telefono,email,tipoProducto);
+        proveedores.add(nuevoProveedor);
+        guardarDatosPersistentes();
+    }
+
+    public List<Proveedor> getProveedores(){return proveedores;}
+
+    //Crear orden de compra
+    public OrdenCompra crearOrdenCompra(String idProveedor)throws Exception{
+        Proveedor proveedor = buscarProveedor(idProveedor);
+        if (proveedor == null) throw new Exception("Proveedor no encontrado.");
+        String idOrden = "OC-" + (ordenesCompra.size() + 1);
+        OrdenCompra nuevaOrden = new OrdenCompra(idOrden, proveedor);
+        ordenesCompra.add(nuevaOrden);
+        return nuevaOrden;
+    }
+
+    public void agregarInsumosAOrden(String idOrden, String idInsumo, int cantidad, double precioUnitario)throws Exception{
+        OrdenCompra orden = buscarOrdenCompra(idOrden);
+        Insumo insumo = buscarInsumo(idInsumo);
+
+        if (orden == null) throw new Exception("Orden no encontrado.");
+        if (insumo == null) throw new Exception("Insumo no encontrado.");
+        orden.agregarDetalle(insumo, cantidad, precioUnitario);
+        guardarDatosPersistentes();
+    }
+
+    public void enviarOrdenCompra(String idOrden)throws Exception{
+        OrdenCompra orden = buscarOrdenCompra(idOrden);
+        if (orden == null) throw new Exception("Orden no encontrado.");
+
+        if (orden.getDetalles().isEmpty()) throw new Exception("No se puede enviar una orden sin detalles");
+        orden.cambiarEstado("ENVIADA");
+        guardarDatosPersistentes();
+    }
 
     // MÉTODOS AUXILIARES DE BÚSQUEDA (Getters)
 
@@ -232,6 +283,23 @@ public class ControladorPicada {
 
     private Cliente buscarCliente(String rut) {
         return clientes.stream().filter(c -> c.getRut().equals(rut)).findFirst().orElse(null);
+    }
+
+    //Auxiliares del inventario
+    private Insumo buscarInsumo(String id) {
+        return insumos.stream().filter(i -> i.getIdInsumo().equals(id)).findFirst().orElse(null);
+    }
+
+    private Proveedor buscarProveedor(String id) {
+        return proveedores.stream().filter(p -> p.getIdProveedor().equals(id)).findFirst().orElse(null);
+    }
+
+    private OrdenCompra buscarOrdenCompra(String id) {
+        return ordenesCompra.stream().filter(o -> o.getIdOrden().equals(id)).findFirst().orElse(null);
+    }
+
+    private Transportista buscarTransportista(String id) {
+        return transportistas.stream().filter(o -> o.getIdTransportista().equals(id)).findFirst().orElse(null);
     }
 
     // Generadores de ID
