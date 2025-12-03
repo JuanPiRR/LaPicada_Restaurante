@@ -16,6 +16,7 @@ public class ControladorPicada {
     private List<Garzon> garzones;
     private List<Cliente> clientes;
     private List<Pedido> pedidos;       // Historial de pedidos
+    private List<Valoracion> valoracion;
 
     private Pedido pedidoActual;        // Carrito en curso
 
@@ -82,7 +83,7 @@ public class ControladorPicada {
     // LÓGICA DEL NEGOCIO
 
     // 1. El Garzón asigna una mesa al Cliente.
-    public void iniciarAtencion(int numeroMesa, String idGarzon, String runCliente, String nombreCliente) throws Exception {
+    public void iniciarAtencion(int numeroMesa, String idGarzon, String rutCliente, String nombreCliente) throws Exception {
         Mesa mesa = buscarMesa(numeroMesa);
         Garzon garzon = buscarGarzon(idGarzon);
 
@@ -90,9 +91,9 @@ public class ControladorPicada {
         if (!mesa.getEstado().equals("DISPONIBLE")) throw new Exception("La mesa está ocupada.");
 
         // Buscar o crear cliente
-        Cliente cliente = buscarCliente(runCliente);
+        Cliente cliente = buscarCliente(rutCliente);
         if (cliente == null) {
-            cliente = new Cliente(runCliente, nombreCliente, "General");
+            cliente = new Cliente(rutCliente, nombreCliente);
             clientes.add(cliente);
         }
 
@@ -139,7 +140,7 @@ public class ControladorPicada {
         int total = pedidoActual.calcularTotal(); // clase Pedido debe sumar los subtotales
 
         // Lógica de Pago
-        Pago pago = new Pago(generarIdPago(), total, metodoPago, new Date());
+        Pago pago = new Pago(generarIdPago(), total, metodoPago, 0);
 
         if (metodoPago.equalsIgnoreCase("EFECTIVO")) {
             if (montoEntregado < total) throw new Exception("Dinero insuficiente.");
@@ -188,8 +189,8 @@ public class ControladorPicada {
         return garzones.stream().filter(g -> g.getIdGarzon().equals(id)).findFirst().orElse(null);
     }
 
-    private Cliente buscarCliente(String run) {
-        return clientes.stream().filter(c -> c.getRun().equals(run)).findFirst().orElse(null);
+    private Cliente buscarCliente(String rut) {
+        return clientes.stream().filter(c -> c.getRut().equals(rut)).findFirst().orElse(null);
     }
 
     // Generadores de ID
