@@ -10,7 +10,12 @@ import java.util.stream.Collectors;
 
 public class ControladorPicada {
     private static final String ARCHIVO_DATOS = "datos_casino.bin";
-
+    private List<Insumo> insumos;
+    private List<Proveedor> proveedores;
+    private List<OrdenCompra> ordenesCompra;
+    private List<Transportista> transportistas;
+    private List<Recepcion> recepciones;
+    private List<PagoProveedor> pagosProveedores;
     private List<Plato> carta;          // Reemplaza a 'productos'
     private List<Mesa> mesas;
     private List<Garzon> garzones;
@@ -36,6 +41,15 @@ public class ControladorPicada {
                 garzones = (List<Garzon>) ois.readObject();
                 clientes = (List<Cliente>) ois.readObject();
                 pedidos = (List<Pedido>) ois.readObject();
+
+                //Nueva lista (inventario)
+                insumos = (List<Insumo>) ois.readObject();
+                proveedores = (List<Proveedor>) ois.readObject();
+                ordenesCompra = (List<OrdenCompra>) ois.readObject();
+                transportistas = (List<Transportista>) ois.readObject();
+                recepciones = (List<Recepcion>) ois.readObject();
+                pagosProveedores = (List<PagoProveedor>) ois.readObject();
+
             } catch (IOException | ClassNotFoundException e) {
                 inicializarDatosPorDefecto();
             }
@@ -51,6 +65,15 @@ public class ControladorPicada {
             oos.writeObject(garzones);
             oos.writeObject(clientes);
             oos.writeObject(pedidos);
+
+            //Nueva lista (inventario)
+            oos.writeObject(insumos);
+            oos.writeObject(proveedores);
+            oos.writeObject(ordenesCompra);
+            oos.writeObject(transportistas);
+            oos.writeObject(recepciones);
+            oos.writeObject(pagosProveedores);
+
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -77,7 +100,25 @@ public class ControladorPicada {
         garzones.add(new Garzon("G01", "Juan Recabal", "Mañana"));
         garzones.add(new Garzon("G02", "Jesús Lema", "Tarde"));
 
+        //a partir de aqui son relacionado a inventario:
+        insumos = new ArrayList<>();
+        proveedores = new ArrayList<>();
+        ordenesCompra = new ArrayList<>();
+        transportistas = new ArrayList<>();
+        recepciones = new ArrayList<>();
+        pagosProveedores = new ArrayList<>();
+
+        insumos.add(new Insumo("I001", "Carne de Res", "Carnes", "kg", 10, 5, 8500));
+        insumos.add(new Insumo("I002", "Pollo", "Carnes", "kg", 8, 3, 4500));
+        insumos.add(new Insumo("I003", "Arroz", "Granos", "kg", 20, 10, 1200));
+        insumos.add(new Insumo("I004", "Tomate", "Verduras", "kg", 5, 2, 1500));
+
+        proveedores.add(new Proveedor("P001", "Carnes Don Lema", "912345678", "carnes@donlema.cl", "Carnes"));
+        proveedores.add(new Proveedor("P002", "Verduras Frescas S.A.", "922334455", "ventas@verdurasfrescas.cl", "Verduras"));
+
+        transportistas.add(new Transportista("T001", "Jose Recabal", "Transportes Rapido", "AB123CD", "933445566"));
         guardarDatosPersistentes();
+
     }
 
     // LÓGICA DEL NEGOCIO
