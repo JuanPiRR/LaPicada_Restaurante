@@ -253,6 +253,50 @@ public class ControladorPicada {
         guardarDatosPersistentes();
     }
 
+    //Recepcion de mercancia
+    public Recepcion registrarRecepcion(String idOrden, String idTransportista, String estado, String observaciones)throws Exception{
+        OrdenCompra orden = buscarOrdenCompra(idOrden);
+        Transportista transportista = buscarTransportista(idTransportista);
+
+        if(orden == null) throw new Exception("Orden no encontrado.");
+        if (transportista == null) throw new Exception("Transportista no encontrado.");
+
+        if(!"ENVIADA".equals(orden.getEstado())) throw new Exception("La orden debe estar ENVIADA para recibirla.");
+
+        String idRecepcion = "REC-" + (recepciones.size() + 1);
+        Recepcion nuevaRecepcion = new Recepcion(idRecepcion,orden,transportista);
+        nuevaRecepcion.setEstado(estado);
+        nuevaRecepcion.setObservaciones(observaciones);
+
+        //actualizar Stock
+        nuevaRecepcion.procesarRecepcion();
+        orden.setRecepcion(nuevaRecepcion);
+        recepciones.add(nuevaRecepcion);
+        guardarDatosPersistentes();
+        return nuevaRecepcion;
+
+    }
+   //Gestion de pagos
+    public PagoProveedor registrarPagoProveedor(String idOrden, double monto, String metodoPago) throws Exception{
+        OrdenCompra orden = buscarOrdenCompra(idOrden);
+        if(orden == null) throw new Exception("Orden no encontrado.");
+        if(!"RECIBIDA".equals(orden.getEstado())) throw new Exception("La orden debe estar RECIBIDA para pagarla.");
+        String idPago = "PAG-PROV" + (pagosProveedores.size() + 1);
+        PagoProveedor nuevoPago = new PagoProveedor(idPago,monto,metodoPago, orden);
+
+        nuevoPago.procesarPago();
+        orden.setPago(nuevoPago);
+        pagosProveedores.add(nuevoPago);
+        guardarDatosPersistentes();
+        return nuevoPago;
+    }
+
+    //Transportista
+    public void agregarTransportista(String id, String nombre, String empresa, String patente, String telefono){
+        Transportista nuevoTransportista = new Transportista(id,nombre,empresa,patente,telefono);
+        transportistas.add(nuevoTransportista);
+        guardarDatosPersistentes();
+    }
     // MÉTODOS AUXILIARES DE BÚSQUEDA (Getters)
 
     public List<Plato> getCarta() { return carta; }
@@ -302,6 +346,22 @@ public class ControladorPicada {
         return transportistas.stream().filter(o -> o.getIdTransportista().equals(id)).findFirst().orElse(null);
     }
 
+    //Metodos de consulta (inventario)
+    public List<OrdenCompra> getOrdenesPorEstado(String estado){
+        return  ordenesCompra.stream().filter(o -> o.getEstado().equals(estado)).collect(Collectors.toList());
+    }
+    public List<OrdenCompra> getOrdenesPorProveedor(String idProveedor){
+        return ordenesCompra.stream().filter(o->o.getProveedor().getIdProveedor().equals(idProveedor)).collect(Collectors.toList());
+    }
+    public List<Recepcion> getRecepciones(){
+        return recepciones;
+    }
+    public List<PagoProveedor> getPagosProveedor() {
+        return pagosProveedores;
+    }
+    public List<Transportista> getTransportistas() {
+        return transportistas;
+    }
     // Generadores de ID
     private String generarIdPedido() { return "PED-" + (pedidos.size() + 1); }
     private String generarIdPago() { return "PAG-" + System.currentTimeMillis(); }
