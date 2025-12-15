@@ -6,6 +6,7 @@ public class DetallePedido implements Serializable {
     private Plato plato;
     private int cantidad;
     private int subTotal;
+    private String observaciones;
 
     public DetallePedido(Plato plato, int cantidad) {
         this.plato = plato;
@@ -28,6 +29,15 @@ public class DetallePedido implements Serializable {
 
     @Override
     public String toString() {
-        return plato.getNombre() + " x" + cantidad + " = $" + subTotal;
+        String obs = (observaciones != null && !observaciones.isEmpty()) ? " (" + observaciones + ")" : "";
+        return plato.getNombre() + " x" + cantidad + " = $" + subTotal + obs;
+    }
+
+    public void setObservaciones(String observaciones) {
+        this.observaciones = observaciones == null ? "" : observaciones;
+    }
+
+    public Object getObservaciones() {
+        return observaciones;
     }
 }

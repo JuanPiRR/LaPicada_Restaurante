@@ -2,14 +2,19 @@
 package controlador;
 
 import modelo.*; // Importar todas las clases del modelo
+
+import javax.swing.*;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.beans.PropertyChangeListener;
+import java.beans.PropertyChangeSupport;
 
 public class ControladorPicada {
     private static final String ARCHIVO_DATOS = "datos_casino.bin";
+    private static ControladorPicada instance; // singleton
     private List<Insumo> insumos;
     private List<Proveedor> proveedores;
     private List<OrdenCompra> ordenesCompra;
@@ -25,10 +30,30 @@ public class ControladorPicada {
 
     private Pedido pedidoActual;        // Carrito en curso
 
+    private final PropertyChangeSupport pcs = new PropertyChangeSupport(this);
+    public static final String PROP_DATOS_PERSISTIDOS = "datosPersistidos";
+
     public ControladorPicada() {
         cargarDatosPersistentes();
         this.pedidoActual = null;
     }
+
+    public static synchronized ControladorPicada getInstance() {
+        if (instance == null) {
+            instance = new ControladorPicada();
+        }
+        return instance;
+    }
+
+    // Permitir que los paneles se suscriban
+    public void addPropertyChangeListener(PropertyChangeListener listener) {
+        pcs.addPropertyChangeListener(listener);
+    }
+
+    public void removePropertyChangeListener(PropertyChangeListener listener) {
+        pcs.removePropertyChangeListener(listener);
+    }
+
 
     // GESTIÓN DE DATOS Y PERSISTENCIA
     @SuppressWarnings("unchecked")
@@ -73,6 +98,9 @@ public class ControladorPicada {
             oos.writeObject(transportistas);
             oos.writeObject(recepciones);
             oos.writeObject(pagosProveedores);
+
+            // Notificar a listeners que los datos cambiaron / fueron persistidos
+            pcs.firePropertyChange(PROP_DATOS_PERSISTIDOS, false, true);
 
         } catch (IOException e) {
             e.printStackTrace();
@@ -162,16 +190,23 @@ public class ControladorPicada {
     }
 
     // 3. Confirmar pedido y enviar a cocina
-    public void confirmarPedidoYEnviarCocina() {
-        if (pedidoActual != null) {
-            // Descontar stock
-            for (DetallePedido det : pedidoActual.getDetalles()) {
+    public void confirmarPedidoYEnviarCocina() throws Exception {
+        if (pedidoActual == null) throw new Exception("No hay pedido activo para confirmar.");
+
+        // Descontar stock
+        for (DetallePedido det : pedidoActual.getDetalles()) {
+            if (det.getPlato() != null) {
                 det.getPlato().restarStock(det.getCantidad());
             }
-            pedidoActual.setEstado("EN_PREPARACION");
-            // Aquí se guardaría el estado temporal, pero aún no se finaliza la venta (pago)
-            guardarDatosPersistentes();
         }
+
+        // Marcar estado y mover a historial para preparación/pago posterior
+        pedidoActual.setEstado("EN_PREPARACION");
+        pedidos.add(pedidoActual);
+
+        // Persistir y limpiar pedidoActual (liberar UI para nuevo pedido)
+        guardarDatosPersistentes();
+        pedidoActual = null;
     }
 
     // 4. Finalizar Atención y Pagar (Garzón entrega boleta)
@@ -201,31 +236,36 @@ public class ControladorPicada {
         pedidoActual = null;
         guardarDatosPersistentes();
     }
+
     //Metodos para gestion de Insumos
     //Gestion de Insumos
-    public void agregarInsumos(String id, String nombre, String categoria, String unidadMedida, int stockMinimo, int stockActual, double precioUnitario){
-        Insumo nuevoInsumo = new Insumo(id,nombre,categoria,unidadMedida,stockMinimo,stockActual,precioUnitario);
+    public void agregarInsumos(String id, String nombre, String categoria, String unidadMedida, int stockMinimo, int stockActual, double precioUnitario) {
+        Insumo nuevoInsumo = new Insumo(id, nombre, categoria, unidadMedida, stockMinimo, stockActual, precioUnitario);
         insumos.add(nuevoInsumo);
         guardarDatosPersistentes();
     }
 
-    public List<Insumo> getInsumos(){return insumos;}
+    public List<Insumo> getInsumos() {
+        return insumos;
+    }
 
-    public List<Insumo> getInsumosConBajoStock(){
-        return insumos.stream().filter(Insumo :: necesitaReposicion).collect(Collectors.toList());
+    public List<Insumo> getInsumosConBajoStock() {
+        return insumos.stream().filter(Insumo::necesitaReposicion).collect(Collectors.toList());
     }
 
     //Gestion de Proveedores
-    public void agregarProveedor(String id, String nombre, String telefono, String email, String tipoProducto){
-        Proveedor nuevoProveedor = new Proveedor(id,nombre,telefono,email,tipoProducto);
+    public void agregarProveedor(String id, String nombre, String telefono, String email, String tipoProducto) {
+        Proveedor nuevoProveedor = new Proveedor(id, nombre, telefono, email, tipoProducto);
         proveedores.add(nuevoProveedor);
         guardarDatosPersistentes();
     }
 
-    public List<Proveedor> getProveedores(){return proveedores;}
+    public List<Proveedor> getProveedores() {
+        return proveedores;
+    }
 
     //Crear orden de compra
-    public OrdenCompra crearOrdenCompra(String idProveedor)throws Exception{
+    public OrdenCompra crearOrdenCompra(String idProveedor) throws Exception {
         Proveedor proveedor = buscarProveedor(idProveedor);
         if (proveedor == null) throw new Exception("Proveedor no encontrado.");
         String idOrden = "OC-" + (ordenesCompra.size() + 1);
@@ -234,7 +274,7 @@ public class ControladorPicada {
         return nuevaOrden;
     }
 
-    public void agregarInsumosAOrden(String idOrden, String idInsumo, int cantidad, double precioUnitario)throws Exception{
+    public void agregarInsumosAOrden(String idOrden, String idInsumo, int cantidad, double precioUnitario) throws Exception {
         OrdenCompra orden = buscarOrdenCompra(idOrden);
         Insumo insumo = buscarInsumo(idInsumo);
 
@@ -244,7 +284,8 @@ public class ControladorPicada {
         guardarDatosPersistentes();
     }
 
-    public void enviarOrdenCompra(String idOrden)throws Exception{
+
+    public void enviarOrdenCompra(String idOrden) throws Exception {
         OrdenCompra orden = buscarOrdenCompra(idOrden);
         if (orden == null) throw new Exception("Orden no encontrado.");
 
@@ -254,35 +295,38 @@ public class ControladorPicada {
     }
 
     //Recepcion de mercancia
-    public Recepcion registrarRecepcion(String idOrden, String idTransportista, String estado, String observaciones)throws Exception{
+    public Recepcion registrarRecepcion(String idOrden, String idTransportista, String observaciones) throws Exception {
         OrdenCompra orden = buscarOrdenCompra(idOrden);
         Transportista transportista = buscarTransportista(idTransportista);
 
-        if(orden == null) throw new Exception("Orden no encontrado.");
-        if (transportista == null) throw new Exception("Transportista no encontrado.");
+        if (orden == null) throw new Exception("Orden no encontrado.");
+        if (idTransportista != null && transportista == null) throw new Exception("Transportista no encontrado."); // Transportista puede ser opcional
 
-        if(!"ENVIADA".equals(orden.getEstado())) throw new Exception("La orden debe estar ENVIADA para recibirla.");
+        // Verificación de estado de la OC
+        if (!"ENVIADA".equals(orden.getEstado())) throw new Exception("La orden debe estar ENVIADA para recibirla.");
 
         String idRecepcion = "REC-" + (recepciones.size() + 1);
-        Recepcion nuevaRecepcion = new Recepcion(idRecepcion,orden,transportista);
-        nuevaRecepcion.setEstado(estado);
+        Recepcion nuevaRecepcion = new Recepcion(idRecepcion, orden, transportista);
+
+        nuevaRecepcion.setEstado("PENDIENTE");
         nuevaRecepcion.setObservaciones(observaciones);
 
-        //actualizar Stock
-        nuevaRecepcion.procesarRecepcion();
         orden.setRecepcion(nuevaRecepcion);
         recepciones.add(nuevaRecepcion);
         guardarDatosPersistentes();
-        return nuevaRecepcion;
 
+        orden.cambiarEstado("EN_RECEPCION");
+
+        return nuevaRecepcion;
     }
-   //Gestion de pagos
-    public PagoProveedor registrarPagoProveedor(String idOrden, double monto, String metodoPago) throws Exception{
+
+    //Gestion de pagos
+    public PagoProveedor registrarPagoProveedor(String idOrden, double monto, String metodoPago) throws Exception {
         OrdenCompra orden = buscarOrdenCompra(idOrden);
-        if(orden == null) throw new Exception("Orden no encontrado.");
-        if(!"RECIBIDA".equals(orden.getEstado())) throw new Exception("La orden debe estar RECIBIDA para pagarla.");
+        if (orden == null) throw new Exception("Orden no encontrado.");
+        if (!"RECIBIDA".equals(orden.getEstado())) throw new Exception("La orden debe estar RECIBIDA para pagarla.");
         String idPago = "PAG-PROV" + (pagosProveedores.size() + 1);
-        PagoProveedor nuevoPago = new PagoProveedor(idPago,monto,metodoPago, orden);
+        PagoProveedor nuevoPago = new PagoProveedor(idPago, monto, metodoPago, orden);
 
         nuevoPago.procesarPago();
         orden.setPago(nuevoPago);
@@ -292,14 +336,16 @@ public class ControladorPicada {
     }
 
     //Transportista
-    public void agregarTransportista(String id, String nombre, String empresa, String patente, String telefono){
-        Transportista nuevoTransportista = new Transportista(id,nombre,empresa,patente,telefono);
+    public void agregarTransportista(String id, String nombre, String empresa, String patente, String telefono) {
+        Transportista nuevoTransportista = new Transportista(id, nombre, empresa, patente, telefono);
         transportistas.add(nuevoTransportista);
         guardarDatosPersistentes();
     }
     // MÉTODOS AUXILIARES DE BÚSQUEDA (Getters)
 
-    public List<Plato> getCarta() { return carta; }
+    public List<Plato> getCarta() {
+        return carta;
+    }
 
     public List<Plato> buscarPlatos(String filtro) {
         return carta.stream()
@@ -311,7 +357,9 @@ public class ControladorPicada {
         return mesas.stream().filter(m -> m.getEstado().equals("DISPONIBLE")).collect(Collectors.toList());
     }
 
-    public List<Garzon> getGarzones() { return garzones; }
+    public List<Garzon> getGarzones() {
+        return garzones;
+    }
 
     private Plato buscarPlato(String id) {
         return carta.stream().filter(p -> p.getIdPlato().equals(id)).findFirst().orElse(null);
@@ -347,22 +395,275 @@ public class ControladorPicada {
     }
 
     //Metodos de consulta (inventario)
-    public List<OrdenCompra> getOrdenesPorEstado(String estado){
-        return  ordenesCompra.stream().filter(o -> o.getEstado().equals(estado)).collect(Collectors.toList());
+    public List<OrdenCompra> getOrdenesPorEstado(String estado) {
+        return ordenesCompra.stream().filter(o -> o.getEstado().equals(estado)).collect(Collectors.toList());
     }
-    public List<OrdenCompra> getOrdenesPorProveedor(String idProveedor){
-        return ordenesCompra.stream().filter(o->o.getProveedor().getIdProveedor().equals(idProveedor)).collect(Collectors.toList());
+
+    public List<OrdenCompra> getOrdenesPorProveedor(String idProveedor) {
+        return ordenesCompra.stream().filter(o -> o.getProveedor().getIdProveedor().equals(idProveedor)).collect(Collectors.toList());
     }
-    public List<Recepcion> getRecepciones(){
+
+    public List<Recepcion> getRecepciones() {
         return recepciones;
     }
+
     public List<PagoProveedor> getPagosProveedor() {
         return pagosProveedores;
     }
+
     public List<Transportista> getTransportistas() {
         return transportistas;
     }
+
     // Generadores de ID
-    private String generarIdPedido() { return "PED-" + (pedidos.size() + 1); }
-    private String generarIdPago() { return "PAG-" + System.currentTimeMillis(); }
+    private String generarIdPedido() {
+        return "PED-" + (pedidos.size() + 1);
+    }
+
+    private String generarIdPago() {
+        return "PAG-" + System.currentTimeMillis();
+    }
+
+    // NUEVO MÉTODO: Obtener categorías únicas para el JComboBox
+    public List<String> obtenerCategoriasUnicas() {
+        return carta.stream()
+                .map(Plato::getTipo)
+                .distinct() // Garantiza que cada categoría aparezca solo una vez
+                .collect(Collectors.toList());
+    }
+
+    public List<String> obtenerCategoriasInsumos() {
+        if (insumos == null) return java.util.Collections.emptyList();
+        return insumos.stream()
+                .map(Insumo::getCategoria)
+                .filter(c -> c != null && !c.trim().isEmpty())
+                .map(String::trim)
+                .distinct()
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .collect(Collectors.toList());
+    }
+
+    // NUEVO MÉTODO: Obtener Platos por el nombre de la categoría (String)
+    public List<Plato> obtenerPlatosPorCategoria(String nombreCategoria) {
+        return carta.stream()
+                .filter(p -> p.getTipo().equalsIgnoreCase(nombreCategoria))
+                .collect(Collectors.toList());
+    }
+
+    public List<DetallePedido> getDetallesPedidoActual() {
+        if (pedidoActual == null) return new ArrayList<>();
+        return pedidoActual.getDetalles();
+    }
+
+    public int getTotalPedidoActual() {
+        if (pedidoActual == null) return 0;
+        return pedidoActual.calcularTotal();
+    }
+
+    public void eliminarDetalleDelPedidoActual(String idPlato) throws Exception {
+        if (pedidoActual == null) throw new Exception("No hay una atención iniciada.");
+        if (pedidoActual.getDetalles() == null || pedidoActual.getDetalles().isEmpty())
+            throw new Exception("Pedido vacío.");
+
+        DetallePedido detalle = pedidoActual.getDetalles().stream()
+                .filter(d -> d.getPlato() != null && idPlato.equals(d.getPlato().getIdPlato()))
+                .findFirst()
+                .orElse(null);
+
+        if (detalle == null) throw new Exception("Detalle no encontrado en el pedido.");
+        pedidoActual.getDetalles().remove(detalle);
+        guardarDatosPersistentes();
+    }
+    public void agregarPlato(String idPlato, String nombre, int precio, String tipo, int disponibilidad) throws Exception {
+        if (idPlato == null || idPlato.trim().isEmpty()) throw new Exception("ID vacío");
+        if (buscarPlato(idPlato) != null) throw new Exception("ID de plato ya existe.");
+        Plato nuevo = new Plato(idPlato, nombre, precio, tipo, disponibilidad);
+        carta.add(nuevo);
+        guardarDatosPersistentes();
+    }
+    public void actualizarPlato(String idPlato, String nombre, int precio, String tipo, int disponibilidad) throws Exception {
+        if (idPlato == null || idPlato.trim().isEmpty()) throw new Exception("ID vacío");
+        Plato p = buscarPlato(idPlato);
+        if (p == null) throw new Exception("Plato no encontrado.");
+        p.setNombre(nombre);
+        p.setPrecio(precio);
+        p.setTipo(tipo);
+        p.setDisponibilidad(disponibilidad);
+        guardarDatosPersistentes();
+    }
+
+    public void eliminarPlato(String id) {
+        Plato p = buscarPlato(id);
+        if (p != null) {
+            carta.remove(p);
+            guardarDatosPersistentes();
+        }
+    }
+
+    public void actualizarTablaInsumos(JTable tablaInsumos) {
+        String[] columnas = {"ID", "Nombre", "Categoría", "Unidad Medida", "Stock Mínimo", "Stock Actual", "Precio Unitario"};
+        Object[][] datos = new Object[insumos.size()][7];
+
+        for (int i = 0; i < insumos.size(); i++) {
+            Insumo insumo = insumos.get(i);
+            datos[i][0] = insumo.getIdInsumo();
+            datos[i][1] = insumo.getNombre();
+            datos[i][2] = insumo.getCategoria();
+            datos[i][3] = insumo.getUnidadMedida();
+            datos[i][4] = insumo.getStockMinimo();
+            datos[i][5] = insumo.getStockActual();
+            datos[i][6] = insumo.getPrecioUnitario();
+        }
+
+        tablaInsumos.setModel(new javax.swing.table.DefaultTableModel(datos, columnas) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false; // Todas las celdas no son editables
+            }
+        });
+    }
+
+    public void filtrarInsumos(JTable tablaInsumos, String estado) {
+        List<Insumo> insumosFiltrados;
+        if (estado.equals("Todos")) {
+            insumosFiltrados = insumos;
+        } else if (estado.equals("Bajo Stock")) {
+            insumosFiltrados = insumos.stream().filter(Insumo::necesitaReposicion).collect(Collectors.toList());
+        } else {
+            insumosFiltrados = new ArrayList<>();
+        }
+
+        String[] columnas = {"ID", "Nombre", "Categoría", "Unidad Medida", "Stock Mínimo", "Stock Actual", "Precio Unitario"};
+        Object[][] datos = new Object[insumosFiltrados.size()][7];
+        for (int i = 0; i < insumosFiltrados.size(); i++) {
+            Insumo insumo = insumosFiltrados.get(i);
+            datos[i][0] = insumo.getIdInsumo();
+            datos[i][1] = insumo.getNombre();
+            datos[i][2] = insumo.getCategoria();
+            datos[i][3] = insumo.getUnidadMedida();
+            datos[i][4] = insumo.getStockMinimo();
+            datos[i][5] = insumo.getStockActual();
+            datos[i][6] = insumo.getPrecioUnitario();
+        }
+
+        tablaInsumos.setModel(new javax.swing.table.DefaultTableModel(datos, columnas) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false; // Todas las celdas no son editables
+            }
+        });
+
+    }
+    public void actualizarInsumo(String id, String nombre, String categoria, String unidadMedida, int stockMinimo, int stockActual) throws Exception {
+        Insumo ins = buscarInsumo(id);
+        if (ins == null) throw new Exception("Insumo no encontrado.");
+        ins.setNombre(nombre);
+        ins.setCategoria(categoria);
+        ins.setUnidadMedida(unidadMedida);
+        ins.setStockMinimo(stockMinimo);
+        ins.setStockActual(stockActual); // el stock actual editado es el que manda
+        guardarDatosPersistentes();
+    }
+    public void eliminarInsumo(String id) {
+        Insumo ins = buscarInsumo(id);
+        if (ins == null) return; // ya no existe, nada que hacer
+
+        // Eliminar insumo del inventario
+        insumos.remove(ins);
+
+        // Quitar cualquier detalle de órdenes de compra que referencien este insumo
+        if (ordenesCompra != null) {
+            for (OrdenCompra oc : ordenesCompra) {
+                if (oc.getDetalles() != null) {
+                    oc.getDetalles().removeIf(d -> d.getInsumo() != null && id.equals(d.getInsumo().getIdInsumo()));
+                }
+            }
+        }
+    }
+    public void procesarRecepcion(String idRecepcion, String estadoFinal) throws Exception {
+        if (recepciones == null) throw new Exception("No hay recepciones registradas.");
+        Recepcion r = recepciones.stream()
+                .filter(x -> x.getIdRecepcion().equals(idRecepcion))
+                .findFirst()
+                .orElse(null);
+        if (r == null) throw new Exception("Recepción no encontrada.");
+
+        if (!"PENDIENTE".equalsIgnoreCase(r.getEstado()) && !"INCOMPLETA".equalsIgnoreCase(r.getEstado())) {
+            throw new Exception("Solo se pueden procesar recepciones en estado PENDIENTE o INCOMPLETA.");
+        }
+
+        OrdenCompra oc = r.getOrdenCompra();
+        if (oc == null) throw new Exception("Orden asociada a la recepción no encontrada.");
+        if (oc.getDetalles() != null) {
+            for (DetalleOrdenCompra d : oc.getDetalles()) {
+                int cantidadRecibida = d.getCantidad(); // en panelRecepciones ya se actualizó d.setCantidad(...)
+                if (cantidadRecibida <= 0) continue;
+
+                Insumo ref = d.getInsumo();
+                Insumo ins = null;
+                if (ref != null) ins = buscarInsumo(ref.getIdInsumo());
+
+                if (ins == null) {
+                    // Crear insumo mínimo si no existe (atributos básicos desde el detalle si están)
+                    String id = ref != null && ref.getIdInsumo() != null ? ref.getIdInsumo() : "I-" + System.currentTimeMillis();
+                    String nombre = ref != null ? ref.getNombre() : "";
+                    String categoria = ref != null ? ref.getCategoria() : "";
+                    String unidad = ref != null ? ref.getUnidadMedida() : "";
+                    ins = new Insumo(id, nombre, categoria, unidad, 0, 0, d.getPrecioUnitario());
+                    insumos.add(ins);
+                }
+
+                // Sumar stock y actualizar precio unitario con el precio recibido
+                ins.agregarStock(cantidadRecibida);
+                if (d.getPrecioUnitario() >= 0) ins.setPrecioUnitario(d.getPrecioUnitario());
+            }
+        }
+
+        // Actualizar estados
+        r.setEstado(estadoFinal);
+        oc.cambiarEstado("RECIBIDA");
+
+        // Persistir y notificar listeners
+        guardarDatosPersistentes();
+    }
+
+    public void cargarProveedoresEnTabla(JTable tablaProveedores) {
+        if (tablaProveedores == null) return;
+
+        String[] columnas = {"ID", "Nombre", "Teléfono", "Email", "Tipo Producto"};
+        List<Proveedor> lista = this.proveedores != null ? this.proveedores : new ArrayList<>();
+
+        Object[][] datos = new Object[lista.size()][columnas.length];
+        for (int i = 0; i < lista.size(); i++) {
+            Proveedor p = lista.get(i);
+            datos[i][0] = p.getIdProveedor();
+            datos[i][1] = p.getNombre();
+            datos[i][2] = p.getTelefono();
+            datos[i][3] = p.getEmail();
+            datos[i][4] = p.getTipoProducto();
+        }
+
+        tablaProveedores.setModel(new javax.swing.table.DefaultTableModel(datos, columnas) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        });
+    }
+    public void actualizarProveedor(String idProveedor, String nombre, String telefono, String email, String tipoProducto) throws Exception {
+        Proveedor p = buscarProveedor(idProveedor);
+        if (p == null) throw new Exception("Proveedor no encontrado.");
+        p.setNombre(nombre);
+        p.setTelefono(telefono);
+        p.setEmail(email);
+        p.setTipoProducto(tipoProducto);
+        guardarDatosPersistentes();
+    }
+
+    public void eliminarProveedor(String idProveedor) throws Exception {
+        Proveedor p = buscarProveedor(idProveedor);
+        if (p == null) throw new Exception("Proveedor no encontrado.");
+        proveedores.remove(p);
+        guardarDatosPersistentes();
+    }
 }

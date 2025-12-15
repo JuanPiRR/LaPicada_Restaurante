@@ -3,6 +3,7 @@ package modelo;
 import java.io.Serializable;
 
 public class DetalleOrdenCompra implements Serializable {
+
     private Insumo insumo;
     private int cantidad;
     private double precioUnitario;

@@ -16,7 +16,7 @@ public class Recepcion implements Serializable {
         this.ordenCompra = ordenCompra;
         this.transportista = transportista;
         this.fecha = new Date();
-        this.estado = "COMPLETA"; // Por defecto, se asume completa
+        this.estado = "PENDIENTE"; // Por defecto, se asume pendiente
         this.observaciones = "";
     }
 
@@ -49,5 +49,9 @@ public class Recepcion implements Serializable {
     @Override
     public String toString() {
         return "Recepción #" + idRecepcion + " - " + fecha + " - Estado: " + estado;
+    }
+
+    public void setFecha(Date date) {
+        this.fecha = date;
     }
 }

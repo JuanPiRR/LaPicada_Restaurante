@@ -1,91 +1,115 @@
+// java
 package vista;
 
-import controlador.ControladorCasino;
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 
 public class VistaPrincipal extends JFrame {
-    private ControladorCasino controlador;
-    private JPanel panelContenido;
+    private JPanel panel1;
+    private JButton pedidos;
+    private JButton carta;
+    private JButton insumos;
+    private JLabel banner;
+    private JButton proveedores;
+    private JButton button1;
+    private JButton button2;
+    private JButton button3;
+
     private CardLayout cardLayout;
+    private JPanel mainContentPanel;
 
-    public VistaPrincipal(ControladorCasino controlador) {
-        this.controlador = controlador;
-        inicializarUI();
-    }
 
-    private void inicializarUI() {
-        setTitle("Sistema Casino Universitario");
-        setSize(900, 600);
+    public VistaPrincipal() {
+        setTitle("La Picada Restaurante Sistema");
+        setSize(1500, 1000);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
 
+        // 1. Inicializar el CardLayout y el contenedor
         cardLayout = new CardLayout();
-        panelContenido = new JPanel(cardLayout);
+        mainContentPanel = new JPanel(cardLayout);
 
-        // Paneles (Deben estar creados en el paquete vista)
-        JPanel panelMenu = crearPanelMenu();
-        // Nota: Asegurate de crear los archivos PanelVenta.java, etc. en el paquete vista
-        // Si no quieres crear archivos separados para paneles, deberás definirlos aquí como clases internas.
-        // Para este ejemplo asumo que crearás los archivos separados o pegarás el código de los paneles abajo.
-        JPanel panelVenta = new PanelVenta(controlador, this);
-        JPanel panelHistorial = new PanelHistorial(controlador, this);
-        JPanel panelInventario = new PanelInventario(controlador, this);
+        // 2. Crear las instancias de los paneles de vista
+        // La vista de pedidos:
+        panelPedidos vistaPedidos = new panelPedidos(this, cardLayout, mainContentPanel);
+        panelCarta vistaCarta = new panelCarta(this, cardLayout, mainContentPanel);
+        panelInsumos vistaInsumos = new panelInsumos(this, cardLayout, mainContentPanel);
+        panelProveedores vistaProveedores = new panelProveedores(this, cardLayout, mainContentPanel);
+        panelOrdenesCompra vistaOrdenesCompra = new panelOrdenesCompra(this, cardLayout, mainContentPanel);
+        panelRecepciones vistaRecepciones = new panelRecepciones(this, cardLayout, mainContentPanel);
 
-        panelContenido.add(panelMenu, "MENU");
-        panelContenido.add(panelVenta, "VENTA");
-        panelContenido.add(panelHistorial, "HISTORIAL");
-        panelContenido.add(panelInventario, "INVENTARIO");
+        // 3. Agregar las vistas al mainContentPanel con un nombre clave
+        // La "carta" del menú principal (el panel1 que viene del .form)
+        mainContentPanel.add(panel1, "MENU_PRINCIPAL");
 
-        add(panelContenido);
-    }
+        // La "carta" de la vista de pedidos
+        //mainContentPanel.add(vistaPedidos.getMainPanel(), "VISTA_PEDIDOS");
+        mainContentPanel.add(vistaPedidos, "VISTA_PEDIDOS");
+        mainContentPanel.add(vistaCarta, "VISTA_CARTA");
+        mainContentPanel.add(vistaInsumos, "VISTA_INSUMOS");
+        mainContentPanel.add(vistaProveedores, "VISTA_PROVEEDORES");
+        mainContentPanel.add(vistaOrdenesCompra, "VISTA_ORDENES_COMPRA");
+        mainContentPanel.add(vistaRecepciones, "VISTA_RECEPCIONES");
 
-    private JPanel crearPanelMenu() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setBackground(new Color(240, 248, 255));
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(10, 10, 10, 10);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
+        // 4. Agregar el contenedor principal al JFrame
+        // Usamos setContentPane() solo una vez para agregar el contenedor principal
+        setContentPane(mainContentPanel);
 
-        JLabel titulo = new JLabel("Menú Principal", SwingConstants.CENTER);
-        titulo.setFont(new Font("Arial", Font.BOLD, 24));
-        gbc.gridx = 0; gbc.gridy = 0;
-        panel.add(titulo, gbc);
-
-        JButton btnVenta = crearBotonMenu("Iniciar Venta");
-        btnVenta.addActionListener(e -> mostrarVista("VENTA"));
-        gbc.gridy = 1; panel.add(btnVenta, gbc);
-
-        JButton btnHistorial = crearBotonMenu("Listar Ventas");
-        btnHistorial.addActionListener(e -> {
-            ((PanelHistorial)panelContenido.getComponent(2)).actualizarTabla();
-            mostrarVista("HISTORIAL");
+        // 5. Lógica del Botón "Pedidos"
+        pedidos.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                cardLayout.show(mainContentPanel, "VISTA_PEDIDOS");
+            }
         });
-        gbc.gridy = 2; panel.add(btnHistorial, gbc);
-
-        JButton btnInventario = crearBotonMenu("Gestión Inventario");
-        btnInventario.addActionListener(e -> {
-            ((PanelInventario)panelContenido.getComponent(3)).actualizarTabla();
-            mostrarVista("INVENTARIO");
+        // 6. Lógica del Botón "Carta"
+        carta.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                cardLayout.show(mainContentPanel, "VISTA_CARTA");
+            }
         });
-        gbc.gridy = 3; panel.add(btnInventario, gbc);
-
-        JButton btnSalir = crearBotonMenu("Salir");
-        btnSalir.setBackground(new Color(255, 100, 100));
-        btnSalir.addActionListener(e -> System.exit(0));
-        gbc.gridy = 4; panel.add(btnSalir, gbc);
-
-        return panel;
+        // 7. Lógica del Botón "Insumos"
+        insumos.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                cardLayout.show(mainContentPanel, "VISTA_INSUMOS");
+            }
+        });
+        // 8. Lógica del Botón "Proveedores"
+        proveedores.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                cardLayout.show(mainContentPanel, "VISTA_PROVEEDORES");
+            }
+        });
+        // 9. Lógica del Botón "Órdenes de Compra"
+        button1.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                cardLayout.show(mainContentPanel, "VISTA_ORDENES_COMPRA");
+            }
+        });
+        // 10. Lógica del Botón "Recepciones"
+        button2.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                cardLayout.show(mainContentPanel, "VISTA_RECEPCIONES");
+            }
+        });
+        button3.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                System.exit(0);
+            }
+        });
+        setVisible(true);
     }
 
-    private JButton crearBotonMenu(String texto) {
-        JButton btn = new JButton(texto);
-        btn.setFont(new Font("Arial", Font.PLAIN, 18));
-        btn.setPreferredSize(new Dimension(250, 50));
-        return btn;
-    }
+    public static void main(String[] args) {
 
-    public void mostrarVista(String nombreVista) {
-        cardLayout.show(panelContenido, nombreVista);
+        SwingUtilities.invokeLater(() -> new VistaPrincipal());
     }
 }

@@ -45,6 +45,7 @@ public class Plato implements Serializable {
     public int getDisponibilidad() { return disponibilidad; }
     public void setDisponibilidad(int disponibilidad) { this.disponibilidad = disponibilidad; }
 
+
     @Override
     public String toString() {
         return nombre + " ($" + precio + ") - Stock: " + disponibilidad;
