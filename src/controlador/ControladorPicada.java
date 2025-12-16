@@ -5,9 +5,7 @@ import modelo.*; // Importar todas las clases del modelo
 
 import javax.swing.*;
 import java.io.*;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
@@ -216,7 +214,7 @@ public class ControladorPicada {
         int total = pedidoActual.calcularTotal(); // clase Pedido debe sumar los subtotales
 
         // Lógica de Pago
-        Pago pago = new Pago(generarIdPago(), total, metodoPago, 0);
+        Pago pago = new Pago(generarIdPago(), total, metodoPago,0,pedidoActual);
 
         if (metodoPago.equalsIgnoreCase("EFECTIVO")) {
             if (montoEntregado < total) throw new Exception("Dinero insuficiente.");
@@ -499,6 +497,137 @@ public class ControladorPicada {
             guardarDatosPersistentes();
         }
     }
+
+    // MÉTODOS PARA GESTIÓN DE PAGOS
+
+    public Pago crearPagoParaPedidoActual(String metodoPago, int propina) throws Exception {
+        if (pedidoActual == null) {
+            throw new Exception("No hay un pedido activo");
+        }
+
+        if (pedidoActual.getEstado().equals("PAGADO")) {
+            throw new Exception("El pedido ya está pagado");
+        }
+
+        Pago pago = pedidoActual.crearPago(metodoPago, propina);
+        guardarDatosPersistentes();
+        return pago;
+    }
+
+     //Procesa el pago del pedido actual
+
+    public boolean procesarPagoPedidoActual(int montoEntregado) throws Exception {
+        if (pedidoActual == null) {
+            throw new Exception("No hay un pedido activo");
+        }
+
+        boolean resultado = pedidoActual.procesarPago(montoEntregado);
+        if (resultado) {
+            // Agregar a historial
+            pedidos.add(pedidoActual);
+
+            // Limpiar pedido actual
+            pedidoActual = null;
+
+            guardarDatosPersistentes();
+        }
+
+        return resultado;
+    }
+
+    //Obtiene información del pago actual
+
+    public String getInfoPagoActual() {
+        if (pedidoActual == null || pedidoActual.getPago() == null) {
+            return "No hay pago pendiente";
+        }
+
+        Pago pago = pedidoActual.getPago();
+        return String.format("Total: $%d | Propina: $%d | Método: %s",
+                pago.getMonto(), pago.getPropina(), pago.getMetodoPago());
+    }
+
+    //Aplica propina porcentual al pago actual
+
+    public void aplicarPropinaPorcentual(int porcentaje) throws Exception {
+        if (pedidoActual == null || pedidoActual.getPago() == null) {
+            throw new Exception("No hay pago para aplicar propina");
+        }
+
+        pedidoActual.getPago().aplicarPropinaPorcentual(porcentaje);
+    }
+
+
+    //Obtiene el vuelto si el pago fue en efectivo
+
+    public int getVueltoPagoActual() {
+        if (pedidoActual == null || pedidoActual.getPago() == null) {
+            return 0;
+        }
+
+        return pedidoActual.getPago().getVuelto();
+    }
+
+
+     //Verifica si el pedido actual está pagado
+
+    public boolean isPedidoActualPagado() {
+        return pedidoActual != null && pedidoActual.isPagado();
+    }
+
+
+    //Obtiene el total a pagar del pedido actual
+
+    public int getTotalAPagarActual() {
+        if (pedidoActual == null) {
+            return 0;
+        }
+
+        return pedidoActual.getTotalConPropina();
+    }
+
+// MÉTODOS PARA HISTORIAL DE PAGOS
+
+    // obtiene todos los pagos procesados
+    public List<Pago> getHistorialPagos() {
+        List<Pago> pagos = new ArrayList<>();
+
+        for (Pedido pedido : pedidos) {
+            if (pedido.getPago() != null && pedido.getPago().isProcesado()) {
+                pagos.add(pedido.getPago());
+            }
+        }
+
+        return pagos;
+    }
+
+
+     //Obtiene el total recaudado por METODO de pago
+
+    public Map<String, Integer> getTotalPorMetodoPago() {
+        Map<String, Integer> totales = new HashMap<>();
+        totales.put("EFECTIVO", 0);
+        totales.put("TARJETA", 0);
+        totales.put("TRANSFERENCIA", 0);
+
+        for (Pago pago : getHistorialPagos()) {
+            String metodo = pago.getMetodoPago().toUpperCase();
+            int total = totales.getOrDefault(metodo, 0);
+            totales.put(metodo, total + pago.getTotalPagado());
+        }
+
+        return totales;
+    }
+
+
+    //Obtiene el total de propinas recaudadas
+
+    public int getTotalPropinas() {
+        return getHistorialPagos().stream()
+                .mapToInt(Pago::getPropina)
+                .sum();
+    }
+
 
     public void actualizarTablaInsumos(JTable tablaInsumos) {
         String[] columnas = {"ID", "Nombre", "Categoría", "Unidad Medida", "Stock Mínimo", "Stock Actual", "Precio Unitario"};

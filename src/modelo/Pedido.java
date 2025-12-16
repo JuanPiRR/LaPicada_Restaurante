@@ -59,6 +59,43 @@ public class Pedido implements Serializable {
         return total;
     }
 
+    public Pago crearPago(String metodoPago, int propina) {
+        int total = calcularTotal();
+        String idPago = "PAG-" + System.currentTimeMillis();
+        Pago pago = new Pago(idPago, total, metodoPago, propina, this);
+        this.pago = pago;
+        return pago;
+    }
+
+    public boolean procesarPago(int montoEntregado) throws Exception {
+        if (pago == null) {
+            throw new Exception("No hay pago asociado a este pedido");
+        }
+
+        boolean resultado = pago.procesarPago(montoEntregado);
+        if (resultado) {
+            this.estado = "PAGADO";
+            // Liberar la mesa automáticamente
+            if (mesa != null) {
+                mesa.setEstado("DISPONIBLE");
+            }
+        }
+        return resultado;
+    }
+
+    // para verificar si el pedido está pagado
+    public boolean isPagado() {
+        return pago != null && pago.isProcesado();
+    }
+
+    // obtener el total con propina
+    public int getTotalConPropina() {
+        if (pago == null) {
+            return calcularTotal();
+        }
+        return pago.getTotalAPagar();
+    }
+
     // Getters y Setters
     public String getIdPedido() { return idPedido; }
     public List<DetallePedido> getDetalles() { return detalles; }
