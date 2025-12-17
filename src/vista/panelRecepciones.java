@@ -109,14 +109,56 @@ public class panelRecepciones extends JPanel{
         }
 
         // Doble clic en la fila para ver detalles
-        tablaRecepciones.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) {
-                    verDetalles();
+        if (tablaRecepciones != null && tablaRecepciones.getClientProperty("doubleClickListenerAdded") == null) {
+            tablaRecepciones.addMouseListener(new java.awt.event.MouseAdapter() {
+                @Override
+                public void mouseClicked(java.awt.event.MouseEvent e) {
+                    // Solo doble clic izquierdo
+                    if (!SwingUtilities.isLeftMouseButton(e) || e.getClickCount() != 2) return;
+
+                    int viewRow = tablaRecepciones.rowAtPoint(e.getPoint());
+                    if (viewRow == -1) return;
+                    int modelRow = tablaRecepciones.convertRowIndexToModel(viewRow);
+
+                    Object idObj = tablaRecepciones.getModel().getValueAt(modelRow, 0); // asume primera columna = idRecepcion
+                    if (idObj == null) return;
+                    String idRecepcion = idObj.toString();
+
+                    modelo.Recepcion recepcion = controladorPicada.getRecepciones().stream()
+                            .filter(r -> idRecepcion.equals(r.getIdRecepcion()))
+                            .findFirst().orElse(null);
+                    if (recepcion == null) return;
+
+                    modelo.Transportista t = recepcion.getTransportista();
+
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("ID Recepción: ").append(recepcion.getIdRecepcion()).append("\n");
+                    sb.append("Estado: ").append(recepcion.getEstado()).append("\n");
+                    sb.append("Observaciones: ").append(recepcion.getObservaciones() != null ? recepcion.getObservaciones() : "").append("\n\n");
+
+                    if (t != null) {
+                        sb.append("----- Transportista -----\n");
+                        sb.append("ID: ").append(t.getIdTransportista()).append("\n");
+                        sb.append("Nombre: ").append(t.getNombre()).append("\n");
+                        sb.append("Empresa: ").append(t.getEmpresa()).append("\n");
+                        sb.append("Patente: ").append(t.getPatente()).append("\n");
+                        sb.append("Teléfono: ").append(t.getTelefono()).append("\n");
+                    } else {
+                        sb.append("Transportista: No asignado\n");
+                    }
+
+                    javax.swing.JTextArea ta = new javax.swing.JTextArea(sb.toString());
+                    ta.setEditable(false);
+                    ta.setFont(new java.awt.Font("Monospaced", java.awt.Font.PLAIN, 12));
+                    javax.swing.JScrollPane scroll = new javax.swing.JScrollPane(ta);
+                    scroll.setPreferredSize(new java.awt.Dimension(420, 320));
+                    javax.swing.JOptionPane.showMessageDialog(panelRecepciones.this, scroll, "Detalle Recepción", javax.swing.JOptionPane.INFORMATION_MESSAGE);
+
+                    e.consume(); // evita re-procesos extra
                 }
-            }
-        });
+            });
+            tablaRecepciones.putClientProperty("doubleClickListenerAdded", Boolean.TRUE);
+        }
 
         // Rellenar tabla al crear el panel
         actualizarTablaRecepciones();
@@ -355,4 +397,6 @@ public class panelRecepciones extends JPanel{
 
         tablaDetallesOrden.setModel(model);
     }
+
+
 }

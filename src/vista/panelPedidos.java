@@ -9,6 +9,9 @@ import modelo.Plato;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.awt.event.ItemListener;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.List;
 
 public class panelPedidos extends JPanel {
@@ -28,9 +31,17 @@ public class panelPedidos extends JPanel {
     private JButton confirmarPedidoButton;
     private JButton volverButton;
     private JPanel MainPanel;
+    private JButton editarPedidoButton;
+    private JTable tablaPedidosConfirmados;
+    private JTable tablaDetallePedidoConfirmado;
+    private JButton iniciarPreparaciónButton;
+    private JButton pagarPedidoButton;
+    private JButton pedidoListoButton;
+    private JButton pedidoEntregadoButton;
 
     private CardLayout parentCardLayout;
     private JPanel parentContentPanel;
+
 
     public panelPedidos(VistaPrincipal mainFrame, CardLayout cl, JPanel contentPanel) {
         this.mainFrame = mainFrame;
@@ -42,152 +53,18 @@ public class panelPedidos extends JPanel {
         setLayout(new BorderLayout());
         add(MainPanel, BorderLayout.CENTER);
 
-        //inicializar combos y listeners
+        // Cargar datos iniciales en la UI (NO abrir diálogos)
         actualizarComboMesas();
         actualizarComboGarzones();
-
-        if (comboCategorias != null) {
-            // poblar con categorías únicas
-            comboCategorias.removeAllItems();
-            comboCategorias.addItem("Todas");
-            List<String> categorias = controladorPicada.obtenerCategoriasUnicas();
-            if (categorias != null) {
-                for (String c : categorias) comboCategorias.addItem(c);
-            }
-            comboCategorias.setSelectedIndex(0);
-
-            // listener que usa el método filtrarPlatos()
-            comboCategorias.addActionListener(e -> filtrarPlatos());
-        }
-
         actualizarCarta();
+        actualizarTablaPedidosConfirmados();
+        controladorPicada.cargarTablaPedidoActual(tablaPedidoActual);
+        if (lblTotal != null) lblTotal.setText("Total: $" + controladorPicada.getTotalPedidoActual());
 
-        habilitarControlesParaPedido(false);
+        // Inicializar listeners (incluye wiring de botones)
+        initListeners();
 
-        if (iniciarPedidoButton != null) {
-            iniciarPedidoButton.addActionListener(e -> {
-                Object selMesa = BoxMesas != null ? BoxMesas.getSelectedItem() : null;
-                Object selGarzon = BoxGarzones != null ? BoxGarzones.getSelectedItem() : null;
-
-                if (selMesa == null || selGarzon == null) {
-                    JOptionPane.showMessageDialog(this, "Seleccione mesa y garzón antes de iniciar.", "Atención", JOptionPane.WARNING_MESSAGE);
-                    return;
-                }
-
-                Mesa mesa = (Mesa) selMesa;
-                Garzon garzon = (Garzon) selGarzon;
-
-                //pedir datos de cliente
-                String rutCliente = JOptionPane.showInputDialog(this, "Ingrese RUT del cliente:", "Cliente", JOptionPane.QUESTION_MESSAGE);
-                if (rutCliente == null) return;
-
-                String nombreCliente = JOptionPane.showInputDialog(this, "Ingrese nombre del cliente:", "Cliente", JOptionPane.QUESTION_MESSAGE);
-                if (nombreCliente == null) return;
-                try {
-                    controladorPicada.iniciarAtencion(mesa.getNumero(), garzon.getIdGarzon(), rutCliente.trim(), nombreCliente.trim());
-                    // Marcar UI: deshabilitar selección y habilitar controles de pedido
-                    if (BoxMesas != null) BoxMesas.setEnabled(false);
-                    if (BoxGarzones != null) BoxGarzones.setEnabled(false);
-                    iniciarPedidoButton.setEnabled(false);
-
-                    habilitarControlesParaPedido(true);
-
-                    //refrescar carta/mesas para mostrar estado actualizado (opcional)
-                    actualizarCarta();
-                    // actualizarComboMesas(); // opcional: si se quiere refrescar la lista de mesas disponibles
-
-                    if (lblTotal != null) lblTotal.setText("0");
-
-                    JOptionPane.showMessageDialog(this, "Atención iniciada. Puede agregar platos al pedido.", "Éxito", JOptionPane.INFORMATION_MESSAGE);
-                } catch (Exception ex) {
-                    JOptionPane.showMessageDialog(this, "Error al iniciar atención: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-                }
-            });
-        }
-        if (btnEliminarDelPedido != null) {
-            btnEliminarDelPedido.addActionListener(e -> {
-                if (tablaPedidoActual == null) return;
-                int fila = tablaPedidoActual.getSelectedRow();
-                if (fila < 0) {
-                    JOptionPane.showMessageDialog(this, "Seleccione un ítem del pedido para eliminar.", "Atención", JOptionPane.WARNING_MESSAGE);
-                    return;
-                }
-                Object idObj = tablaPedidoActual.getValueAt(fila, 0);
-                if (idObj == null) return;
-                String idPlato = idObj.toString();
-
-                try {
-                    controladorPicada.eliminarDetalleDelPedidoActual(idPlato);
-                    agregarFilaPLato();        // refresca tablaPedidoActual
-                    actualizarCarta();        // refresca carta (stock u otros cambios)
-                    if (lblTotal != null) lblTotal.setText(String.valueOf(controladorPicada.getTotalPedidoActual()));
-                } catch (Exception ex) {
-                    JOptionPane.showMessageDialog(this, "No se pudo eliminar el plato: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-                }
-            });
-        }
-
-        if (btnAgregarPlato != null) {
-            btnAgregarPlato.addActionListener(e -> {
-                if (tablaCarta == null) return;
-                int fila = tablaCarta.getSelectedRow();
-                if (fila < 0) {
-                    JOptionPane.showMessageDialog(this, "Seleccione un plato de la carta.", "Atención", JOptionPane.WARNING_MESSAGE);
-                    return;
-                }
-                //idPlato que está en la columna 0
-                Object idObj = tablaCarta.getValueAt(fila, 0);
-                if (idObj == null) return;
-                String idPlato = idObj.toString();
-
-                //cantidad
-                String sCantidad = JOptionPane.showInputDialog(this, "Ingrese cantidad:", "Cantidad", JOptionPane.QUESTION_MESSAGE);
-                if (sCantidad == null) return; // cancelado
-                int cantidad;
-                try {
-                    cantidad = Integer.parseInt(sCantidad.trim());
-                    if (cantidad <= 0) throw new NumberFormatException();
-                } catch (NumberFormatException ex) {
-                    JOptionPane.showMessageDialog(this, "Cantidad inválida.", "Error", JOptionPane.ERROR_MESSAGE);
-                    return;
-                }
-
-                //observaciones (opcional)
-                String observaciones = JOptionPane.showInputDialog(this, "Observaciones (opcional):", "Observaciones", JOptionPane.QUESTION_MESSAGE);
-                if (observaciones == null) observaciones = "";
-
-                try {
-                    controladorPicada.agregarPlatoAlPedido(idPlato, cantidad, observaciones);
-                    agregarFilaPLato();
-                    actualizarCarta(); // actualizar stock mostrado si aplica
-                    if (lblTotal != null) lblTotal.setText(String.valueOf(controladorPicada.getTotalPedidoActual()));
-                } catch (Exception ex) {
-                    JOptionPane.showMessageDialog(this, "No se pudo agregar el plato: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-                }
-            });
-        }
-
-        if (confirmarPedidoButton != null) {
-            confirmarPedidoButton.addActionListener(e -> {
-                try {
-                    controladorPicada.confirmarPedidoYEnviarCocina();
-
-                    // Actualizar UI: limpiar tabla de pedido actual, refrescar carta y total, habilitar controles para nuevo pedido
-                    agregarFilaPLato(); // quedará vacía porque pedidoActual ahora es null
-                    actualizarCarta();
-                    habilitarControlesParaPedido(false);
-                    if (BoxMesas != null) BoxMesas.setEnabled(true);
-                    if (BoxGarzones != null) BoxGarzones.setEnabled(true);
-                    if (iniciarPedidoButton != null) iniciarPedidoButton.setEnabled(true);
-                    if (lblTotal != null) lblTotal.setText("0");
-
-                    JOptionPane.showMessageDialog(this, "Pedido confirmado y enviado a cocina.", "Éxito", JOptionPane.INFORMATION_MESSAGE);
-                } catch (Exception ex) {
-                    JOptionPane.showMessageDialog(this, "No se pudo confirmar el pedido: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-                }
-            });
-        }
-
+        // Volver
         if (volverButton != null) {
             volverButton.addActionListener(e -> {
                 parentCardLayout.show(parentContentPanel, "MENU_PRINCIPAL");
@@ -200,7 +77,8 @@ public class panelPedidos extends JPanel {
         if (BoxMesas == null) return;
 
         BoxMesas.removeAllItems();
-        List<Mesa> listaMesas = controladorPicada.getMesasDisponibles();
+        // Mostrar todas las mesas (para que la ocupada no desaparezca)
+        List<Mesa> listaMesas = controladorPicada.getMesas();
         if (listaMesas != null) {
             for (Mesa mesa : listaMesas) {
                 BoxMesas.addItem(mesa);
@@ -223,163 +101,471 @@ public class panelPedidos extends JPanel {
     }
 
     private void actualizarCarta() {
+        List<Plato> lista = controladorPicada.getCarta();
+        String[] cols = {"ID", "Nombre", "Categoría", "Precio", "Disponibilidad"};
+        DefaultTableModel model = new DefaultTableModel(cols, 0) {
+            @Override public boolean isCellEditable(int row, int column) { return false; }
+        };
+        if (lista != null){
+            for (Plato p : lista){
+                model.addRow(new Object[]{ p.getIdPlato(), p.getNombre(), p.getTipo(), p.getPrecio(), p.getDisponibilidad() });
+            }
+        }
+        tablaCarta.setModel(model);
+    }
+
+
+
+    private void agregarFilaPLato() {
         if (tablaCarta == null) return;
 
-        //definir columnas
-        String[] columnas = {"ID", "Nombre", "Categoría", "Precio", "Disponibilidad"};
-        DefaultTableModel modelo = modeloTabla(columnas);
-
-        tablaCarta.setModel(modelo);
-        // Ajustes opcionales de ancho/orden
-        if (tablaCarta.getColumnModel().getColumnCount() > 0) {
-            tablaCarta.getColumnModel().getColumn(0).setPreferredWidth(60);  // ID
-            tablaCarta.getColumnModel().getColumn(1).setPreferredWidth(200); // Nombre
-            tablaCarta.getColumnModel().getColumn(2).setPreferredWidth(100); // Categoría
-            tablaCarta.getColumnModel().getColumn(3).setPreferredWidth(80);  // Precio
-            tablaCarta.getColumnModel().getColumn(4).setPreferredWidth(80);  // Disponibilidad
-        }
-    }
-
-
-    private void habilitarControlesParaPedido(boolean habilitar) {
-        if (comboCategorias != null) comboCategorias.setEnabled(habilitar);
-        if (tablaCarta != null) tablaCarta.setEnabled(habilitar);
-        if (btnAgregarPlato != null) btnAgregarPlato.setEnabled(habilitar);
-        if (tablaPedidoActual != null) tablaPedidoActual.setEnabled(habilitar);
-        if (btnEliminarDelPedido != null) btnEliminarDelPedido.setEnabled(habilitar);
-        if (confirmarPedidoButton != null) confirmarPedidoButton.setEnabled(habilitar);
-    }
-
-    private DefaultTableModel modeloTabla(String[] columnas) {
-        DefaultTableModel modelo = new DefaultTableModel(columnas, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
-            }
-        };
-        List<Plato> platos = controladorPicada.getCarta();
-        if (platos != null) {
-            for (Plato p : platos) {
-                Object precio;
-                try {
-                    precio = p.getPrecio();
-                } catch (Throwable ex1) {
-                    try {
-                        precio = p.getPrecio();
-                    } catch (Throwable ex2) {
-                        precio = "";
-                    }
-                }
-                Object[] fila = {
-                        p.getIdPlato(),
-                        p.getNombre(),
-                        p.getTipo(),
-                        precio,
-                        p.getDisponibilidad()
-                };
-                modelo.addRow(fila);
-            }
-        }
-        return modelo;
-    }
-    private void agregarFilaPLato() {
-        if (tablaPedidoActual == null) return;
-
-        String[] columnas = {"ID", "Nombre", "Cantidad", "Precio Unit.", "Subtotal", "Observaciones"};
-        DefaultTableModel modelo = new DefaultTableModel(columnas, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) { return false; }
-        };
-
-        List<DetallePedido> detalles = controladorPicada.getDetallesPedidoActual();
-        if (detalles != null) {
-            for (DetallePedido det : detalles) {
-                Plato p = det.getPlato();
-                int cantidad = det.getCantidad();
-                Object precioUnit = p != null ? p.getPrecio() : "";
-                int subtotal = 0;
-                try {
-                    subtotal = (int) ((Number) precioUnit).intValue() * cantidad;
-                } catch (Throwable t) {
-                    // si precio no es numérico, dejar subtotal 0
-                }
-                Object[] fila = {
-                        p != null ? p.getIdPlato() : "",
-                        p != null ? p.getNombre() : "",
-                        cantidad,
-                        precioUnit,
-                        subtotal,
-                        det.getObservaciones() != null ? det.getObservaciones() : ""
-                };
-                modelo.addRow(fila);
-            }
+        int filaSel = tablaCarta.getSelectedRow();
+        if (filaSel == -1) {
+            JOptionPane.showMessageDialog(this, "Seleccione un plato de la carta.", "Atención", JOptionPane.WARNING_MESSAGE);
+            return;
         }
 
-        tablaPedidoActual.setModel(modelo);
-        // Ajustes opcionales de ancho
-        if (tablaPedidoActual.getColumnModel().getColumnCount() > 0) {
-            tablaPedidoActual.getColumnModel().getColumn(0).setPreferredWidth(60);
-            tablaPedidoActual.getColumnModel().getColumn(1).setPreferredWidth(200);
-            tablaPedidoActual.getColumnModel().getColumn(2).setPreferredWidth(60);
-            tablaPedidoActual.getColumnModel().getColumn(3).setPreferredWidth(80);
-            tablaPedidoActual.getColumnModel().getColumn(4).setPreferredWidth(80);
+        Object idObj = tablaCarta.getModel().getValueAt(filaSel, 0);
+        if (idObj == null) return;
+        String idPlato = idObj.toString();
+
+        JPanel input = new JPanel(new GridLayout(2, 2, 6, 6));
+        input.add(new JLabel("Cantidad:"));
+        JSpinner spinnerCantidad = new JSpinner(new SpinnerNumberModel(1, 1, 999, 1));
+        input.add(spinnerCantidad);
+        input.add(new JLabel("Observaciones:"));
+        JTextField tfObserv = new JTextField();
+        input.add(tfObserv);
+
+        int opcion = JOptionPane.showConfirmDialog(this, input, "Agregar plato al pedido", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (opcion != JOptionPane.OK_OPTION) return;
+
+        int cantidad = (Integer) spinnerCantidad.getValue();
+        String observ = tfObserv.getText();
+
+        try {
+            controladorPicada.agregarPlatoAlPedido(idPlato, cantidad, observ);
+            controladorPicada.cargarTablaPedidoActual(tablaPedidoActual);
+            if (lblTotal != null) lblTotal.setText("Total: $" + controladorPicada.getTotalPedidoActual());
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
     private void filtrarPlatos() {
         if (tablaCarta == null) return;
 
-        Object sel = comboCategorias != null ? comboCategorias.getSelectedItem() : null;
-        String categoria = (sel == null || "Todas".equals(sel.toString())) ? null : sel.toString();
-
-        if (categoria == null) {
-            // Mostrar toda la carta usando el método existente
+        String sel = comboCategorias != null ? java.util.Objects.toString(comboCategorias.getSelectedItem(), "Todas") : "Todas";
+        if ("Todas".equalsIgnoreCase(sel)) {
             actualizarCarta();
             return;
         }
 
+        List<Plato> platos = controladorPicada.obtenerPlatosPorCategoria(sel);
+        platos = platos != null ? platos : java.util.Collections.emptyList();
+
         String[] columnas = {"ID", "Nombre", "Categoría", "Precio", "Disponibilidad"};
         DefaultTableModel modelo = new DefaultTableModel(columnas, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
-            }
+            @Override public boolean isCellEditable(int row, int column) { return false; }
         };
 
-        List<Plato> platos = controladorPicada.obtenerPlatosPorCategoria(categoria);
-        if (platos != null) {
-            for (Plato p : platos) {
-                Object precio;
-                try {
-                    precio = p.getPrecio();
-                } catch (Throwable t) {
-                    precio = "";
-                }
-                Object[] fila = {
-                        p.getIdPlato(),
-                        p.getNombre(),
-                        p.getTipo(),
-                        precio,
-                        p.getDisponibilidad()
-                };
-                modelo.addRow(fila);
-            }
+        for (Plato p : platos) {
+            modelo.addRow(new Object[]{
+                    p.getIdPlato(),
+                    p.getNombre(),
+                    p.getTipo(),
+                    p.getPrecio(),
+                    p.getDisponibilidad()
+            });
         }
 
         tablaCarta.setModel(modelo);
 
-        if (tablaCarta.getColumnModel().getColumnCount() > 0) {
-            tablaCarta.getColumnModel().getColumn(0).setPreferredWidth(60);  // ID
-            tablaCarta.getColumnModel().getColumn(1).setPreferredWidth(200); // Nombre
-            tablaCarta.getColumnModel().getColumn(2).setPreferredWidth(100); // Categoría
-            tablaCarta.getColumnModel().getColumn(3).setPreferredWidth(80);  // Precio
-            tablaCarta.getColumnModel().getColumn(4).setPreferredWidth(80);  // Disponibilidad
+        int[] anchos = {60, 200, 100, 80, 80};
+        for (int i = 0; i < anchos.length && i < tablaCarta.getColumnModel().getColumnCount(); i++) {
+            tablaCarta.getColumnModel().getColumn(i).setPreferredWidth(anchos[i]);
+        }
+    }
+    public void actualizarTablaPedidosConfirmados() {
+        controladorPicada.cargarTablaPedidosConfirmados(tablaPedidosConfirmados);
+    }
+    public void actualizarTablaDetallePedidoConfirmado() {
+        if (tablaPedidosConfirmados == null || tablaDetallePedidoConfirmado == null) return;
+
+        int filaSel = tablaPedidosConfirmados.getSelectedRow();
+        if (filaSel == -1) {
+            // limpiar tabla detalle si no hay selección
+            tablaDetallePedidoConfirmado.setModel(new DefaultTableModel(new Object[0][0], new String[]{"ID Plato","Nombre","Cantidad","Observaciones","Subtotal"}) {
+                @Override public boolean isCellEditable(int row, int column) { return false; }
+            });
+            return;
+        }
+
+        // Convertir índice de vista a índice de modelo (evita mantener siempre el primer id)
+        int modelRow = tablaPedidosConfirmados.convertRowIndexToModel(filaSel);
+        Object idObj = tablaPedidosConfirmados.getModel().getValueAt(modelRow, 0);
+        if (idObj == null) return;
+        String idPedido = idObj.toString();
+
+        controladorPicada.cargarTablaDetallePedidoConfirmado(tablaDetallePedidoConfirmado, idPedido);
+    }
+    public void editarPedido() {
+        if (tablaPedidosConfirmados == null) return;
+
+        int filaSel = tablaPedidosConfirmados.getSelectedRow();
+        if (filaSel == -1) {
+            JOptionPane.showMessageDialog(this, "Seleccione un pedido para editar.", "Atención", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        int modelRow = tablaPedidosConfirmados.convertRowIndexToModel(filaSel);
+        Object idObj = tablaPedidosConfirmados.getModel().getValueAt(modelRow, 0);
+        if (idObj == null) return;
+        String idPedido = idObj.toString();
+
+        try {
+            controladorPicada.empezarEdicionPedido(idPedido);
+
+            // Actualizar UI: cargar pedido actual en la tabla de edición y habilitar controles
+            controladorPicada.cargarTablaPedidoActual(tablaPedidoActual);
+            actualizarTablaPedidosConfirmados(); // quita el pedido del historial visualmente
+
+            // REFRESCAR tabla de carta porque empezarEdicionPedido devuelve stock
+            controladorPicada.cargarTablaCarta(tablaCarta);
+
+            if (btnAgregarPlato != null) btnAgregarPlato.setEnabled(true);
+            if (btnEliminarDelPedido != null) btnEliminarDelPedido.setEnabled(true);
+            if (confirmarPedidoButton != null) confirmarPedidoButton.setEnabled(true);
+            if (lblTotal != null) lblTotal.setText("Total: $" + controladorPicada.getTotalPedidoActual());
+
+            JOptionPane.showMessageDialog(this, "Pedido cargado para edición.", "Edición", JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
+    public void iniciarPreparacionPedido() {
+        if (tablaPedidosConfirmados == null) return;
 
-    public JPanel getMainPanel() {
-        return MainPanel;
+        int filaSel = tablaPedidosConfirmados.getSelectedRow();
+        if (filaSel == -1) {
+            JOptionPane.showMessageDialog(this, "Seleccione un pedido.", "Atención", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        int modelRow = tablaPedidosConfirmados.convertRowIndexToModel(filaSel);
+        Object idObj = tablaPedidosConfirmados.getModel().getValueAt(modelRow, 0);
+        if (idObj == null) return;
+        String idPedido = idObj.toString();
+
+        try {
+            controladorPicada.iniciarPreparacionPedido(idPedido);
+            actualizarTablaPedidosConfirmados();
+            actualizarTablaDetallePedidoConfirmado();
+            JOptionPane.showMessageDialog(this, "Pedido pasado a EN_PREPARACION.", "Éxito", JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+        }
     }
+    public void pagarPedido() {
+        int filaSel = tablaPedidosConfirmados.getSelectedRow();
+        if (filaSel == -1) {
+            JOptionPane.showMessageDialog(this, "Seleccione un pedido para pagar.", "Atención", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
 
+        Object idObj = tablaPedidosConfirmados.getModel().getValueAt(filaSel, 0);
+        if (idObj == null) return;
+        String idPedido = idObj.toString();
+
+        try {
+            controladorPicada.procesarPagoPedido(idPedido, this.mainFrame, parentCardLayout, parentContentPanel);
+            actualizarTablaPedidosConfirmados();
+            tablaDetallePedidoConfirmado.setModel(new DefaultTableModel());
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+    private void initListeners() {
+        // Inicializar estados
+        if (btnAgregarPlato != null) btnAgregarPlato.setEnabled(false);
+        if (btnEliminarDelPedido != null) btnEliminarDelPedido.setEnabled(false);
+        if (confirmarPedidoButton != null) confirmarPedidoButton.setEnabled(false);
+        if (pagarPedidoButton != null) pagarPedidoButton.setEnabled(false);
+        if (iniciarPedidoButton != null) iniciarPedidoButton.setEnabled(false);
+
+        // Listener general: habilita botón iniciar cuando hay mesa y garzón seleccionados
+        ItemListener comboListener = e -> {
+            boolean mesaSeleccionada = BoxMesas != null && BoxMesas.getSelectedItem() != null;
+            boolean garzonSeleccionado = BoxGarzones != null && BoxGarzones.getSelectedItem() != null;
+            if (iniciarPedidoButton != null) iniciarPedidoButton.setEnabled(mesaSeleccionada && garzonSeleccionado);
+        };
+
+        if (BoxMesas != null) BoxMesas.addItemListener(comboListener);
+        if (BoxGarzones != null) BoxGarzones.addItemListener(comboListener);
+
+        // Iniciar atención (RUT y nombre opcionales)
+        if (iniciarPedidoButton != null) {
+            iniciarPedidoButton.addActionListener(ev -> {
+                try {
+                    Object mesaObj = BoxMesas != null ? BoxMesas.getSelectedItem() : null;
+                    Object garzonObj = BoxGarzones != null ? BoxGarzones.getSelectedItem() : null;
+                    if (mesaObj == null || garzonObj == null) {
+                        JOptionPane.showMessageDialog(this, "Seleccione mesa y garzón.", "Atención", JOptionPane.WARNING_MESSAGE);
+                        return;
+                    }
+
+                    int numeroMesa = (mesaObj instanceof Mesa) ? ((Mesa) mesaObj).getNumero()
+                            : Integer.parseInt(mesaObj.toString());
+                    String idGarzon = (garzonObj instanceof Garzon) ? ((Garzon) garzonObj).getIdGarzon()
+                            : garzonObj.toString();
+
+                    String rut = JOptionPane.showInputDialog(this, "Ingrese RUT del cliente (opcional):", "");
+                    if (rut == null) rut = ""; // cancelar -> tratar como vacío
+                    String nombre = JOptionPane.showInputDialog(this, "Ingrese nombre del cliente (opcional):", "");
+                    if (nombre == null) nombre = "";
+
+                    controladorPicada.iniciarAtencion(numeroMesa, idGarzon, rut.trim(), nombre.trim());
+
+                    // Habilitar controles de pedido
+                    if (btnAgregarPlato != null) btnAgregarPlato.setEnabled(true);
+                    if (btnEliminarDelPedido != null) btnEliminarDelPedido.setEnabled(true);
+                    if (confirmarPedidoButton != null) confirmarPedidoButton.setEnabled(true);
+
+                    // Actualizar tablas/labels
+                    actualizarComboMesas();
+                    controladorPicada.cargarTablaPedidoActual(tablaPedidoActual);
+                    if (lblTotal != null) lblTotal.setText("Total: $" + controladorPicada.getTotalPedidoActual());
+
+                    JOptionPane.showMessageDialog(this, "Atención iniciada.", "Éxito", JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            });
+        }
+
+        // Listener específico para cambios en la caja de mesas (verifica estado DISPONIBLE)
+        ItemListener comboMesaListener = e -> {
+            if (e.getStateChange() != java.awt.event.ItemEvent.SELECTED) return;
+
+            Object sel = BoxMesas != null ? BoxMesas.getSelectedItem() : null;
+            if (sel == null) {
+                actualizarEstadoIniciar();
+                return;
+            }
+
+            int numeroMesa = -1;
+            try {
+                numeroMesa = Integer.parseInt(sel.toString());
+            } catch (NumberFormatException ex) {
+                try {
+                    // Si se usan objetos Mesa en el combo, extraer getNumero por reflexión
+                    java.lang.reflect.Method m = sel.getClass().getMethod("getNumero");
+                    Object val = m.invoke(sel);
+                    if (val instanceof Integer) numeroMesa = (Integer) val;
+                    else numeroMesa = Integer.parseInt(val.toString());
+                } catch (Exception ignored) { }
+            }
+
+            if (numeroMesa != -1) {
+                final int mesaNum = numeroMesa; // hacerla effectively final
+                Mesa m = controladorPicada.getMesas().stream()
+                        .filter(x -> x.getNumero() == mesaNum)
+                        .findFirst()
+                        .orElse(null);
+                if (m != null && !"DISPONIBLE".equalsIgnoreCase(m.getEstado())) {
+                    if (iniciarPedidoButton != null) iniciarPedidoButton.setEnabled(false);
+                    JOptionPane.showMessageDialog(this,
+                            "La mesa seleccionada está ocupada. No se puede iniciar atención.",
+                            "Atención", JOptionPane.INFORMATION_MESSAGE);
+                    return;
+                }
+            }
+
+            // Si la mesa está disponible, actualizar estado normal de botones
+            actualizarEstadoIniciar();
+        };
+
+        if (BoxMesas != null) BoxMesas.addItemListener(comboMesaListener);
+
+        // Agregar plato al pedido (solo una invocación)
+        if (btnAgregarPlato != null) {
+            btnAgregarPlato.addActionListener(ev -> agregarFilaPLato());
+        }
+
+        // Eliminar detalle seleccionado del pedido actual
+        if (btnEliminarDelPedido != null) {
+            btnEliminarDelPedido.addActionListener(ev -> {
+                try {
+                    int filaSel = tablaPedidoActual.getSelectedRow();
+                    if (filaSel == -1) {
+                        JOptionPane.showMessageDialog(this, "Seleccione un detalle para eliminar.", "Atención", JOptionPane.WARNING_MESSAGE);
+                        return;
+                    }
+                    Object idObj = tablaPedidoActual.getModel().getValueAt(filaSel, 0);
+                    if (idObj == null) return;
+                    String idPlato = idObj.toString();
+
+                    controladorPicada.eliminarDetalleDelPedidoActual(idPlato);
+                    controladorPicada.cargarTablaPedidoActual(tablaPedidoActual);
+                    if (lblTotal != null) lblTotal.setText("Total: $" + controladorPicada.getTotalPedidoActual());
+
+                    JOptionPane.showMessageDialog(this, "Detalle eliminado.", "Éxito", JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            });
+        }
+
+        // Confirmar pedido y enviar a historial
+        // 1) En el listener de confirmar pedido (donde llamas a controladorPicada.confirmarPedidoYEnviarCocina())
+        if (confirmarPedidoButton != null) {
+            confirmarPedidoButton.addActionListener(ev -> {
+                try {
+                    controladorPicada.confirmarPedidoYEnviarCocina();
+                    // Después de confirmar, deshabilitar botones de edición del pedido
+                    if (btnAgregarPlato != null) btnAgregarPlato.setEnabled(false);
+                    if (btnEliminarDelPedido != null) btnEliminarDelPedido.setEnabled(false);
+                    if (confirmarPedidoButton != null) confirmarPedidoButton.setEnabled(false);
+
+                    // REFRESCAR UI: tabla de pedidos, detalle pedido actual y tabla de carta (stock)
+                    actualizarTablaPedidosConfirmados();
+                    controladorPicada.cargarTablaPedidoActual(tablaPedidoActual);
+                    controladorPicada.cargarTablaCarta(tablaCarta); // <- actualiza disponibilidad visible
+                    if (lblTotal != null) lblTotal.setText("Total: $" + controladorPicada.getTotalPedidoActual());
+                    JOptionPane.showMessageDialog(this, "Pedido confirmado (estado ABIERTO).", "Éxito", JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            });
+        }
+
+        // Pagar pedido seleccionado en la tabla de pedidos confirmados
+        if (tablaPedidosConfirmados != null) {
+            tablaPedidosConfirmados.getSelectionModel().addListSelectionListener(e -> {
+                if (!e.getValueIsAdjusting()) {
+                    actualizarTablaDetallePedidoConfirmado();
+                    // Habilitar pagar solo si el pedido seleccionado está ENTREGADO y no PAGADO
+                    int filaSel = tablaPedidosConfirmados.getSelectedRow();
+                    boolean habilitarPago = false;
+                    if (filaSel != -1) {
+                        int modelRow = tablaPedidosConfirmados.convertRowIndexToModel(filaSel);
+                        Object estadoObj = tablaPedidosConfirmados.getModel().getValueAt(modelRow, 2); // columna Estado
+                        Object idObj = tablaPedidosConfirmados.getModel().getValueAt(modelRow, 0);
+                        if (estadoObj != null && idObj != null) {
+                            String estado = estadoObj.toString();
+                            if ("ENTREGADO".equalsIgnoreCase(estado)) {
+                                habilitarPago = true;
+                            }
+                        }
+                    }
+                    if (pagarPedidoButton != null) pagarPedidoButton.setEnabled(habilitarPago);
+                }
+            });
+        }
+        if (pedidoListoButton != null) {
+            pedidoListoButton.addActionListener(ev -> {
+                int filaSel = tablaPedidosConfirmados != null ? tablaPedidosConfirmados.getSelectedRow() : -1;
+                if (filaSel == -1) {
+                    JOptionPane.showMessageDialog(this, "Seleccione un pedido.", "Atención", JOptionPane.INFORMATION_MESSAGE);
+                    return;
+                }
+                int modelRow = tablaPedidosConfirmados.convertRowIndexToModel(filaSel);
+                Object idObj = tablaPedidosConfirmados.getModel().getValueAt(modelRow, 0);
+                if (idObj == null) return;
+                String idPedido = idObj.toString();
+                try {
+                    controladorPicada.marcarPedidoListo(idPedido);
+                    actualizarTablaPedidosConfirmados();
+                    actualizarTablaDetallePedidoConfirmado();
+                    JOptionPane.showMessageDialog(this, "Pedido marcado como LISTO.", "Éxito", JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            });
+        }
+        if (pedidoEntregadoButton != null) {
+            pedidoEntregadoButton.addActionListener(ev -> {
+                int filaSel = tablaPedidosConfirmados != null ? tablaPedidosConfirmados.getSelectedRow() : -1;
+                if (filaSel == -1) {
+                    JOptionPane.showMessageDialog(this, "Seleccione un pedido.", "Atención", JOptionPane.INFORMATION_MESSAGE);
+                    return;
+                }
+                int modelRow = tablaPedidosConfirmados.convertRowIndexToModel(filaSel);
+                Object idObj = tablaPedidosConfirmados.getModel().getValueAt(modelRow, 0);
+                if (idObj == null) return;
+                String idPedido = idObj.toString();
+                try {
+                    controladorPicada.marcarPedidoEntregado(idPedido);
+                    actualizarTablaPedidosConfirmados();
+                    actualizarTablaDetallePedidoConfirmado();
+                    JOptionPane.showMessageDialog(this, "Pedido marcado como ENTREGADO.", "Éxito", JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            });
+        }
+        if (pagarPedidoButton != null) {
+            pagarPedidoButton.addActionListener(ev -> pagarPedido());
+        }
+        // Botones de acciones sobre pedidos confirmados
+        if (iniciarPreparaciónButton != null) {
+            iniciarPreparaciónButton.addActionListener(ev -> {
+                iniciarPreparacionPedido();
+                actualizarTablaPedidosConfirmados();
+                actualizarTablaDetallePedidoConfirmado();
+                controladorPicada.cargarTablaCarta(tablaCarta); // <- muestra el stock ya descontado
+            });
+        }
+
+        if (editarPedidoButton != null) {
+            editarPedidoButton.addActionListener(ev -> {
+                editarPedido();
+                actualizarTablaPedidosConfirmados();
+                actualizarTablaDetallePedidoConfirmado();
+            });
+        }
+
+        // Actualizar detalle cuando se selecciona un pedido confirmado
+        if (tablaPedidosConfirmados != null) {
+            tablaPedidosConfirmados.getSelectionModel().addListSelectionListener(e -> {
+                if (!e.getValueIsAdjusting()) {
+                    actualizarTablaDetallePedidoConfirmado();
+                }
+            });
+        }
+
+        // Doble clic en tablaPedidoActual para ver más detalle (observaciones, cantidad, subtotal)
+        if (tablaPedidoActual != null) {
+            tablaPedidoActual.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    if (e.getClickCount() == 2 && tablaPedidoActual.getSelectedRow() != -1) {
+                        int fila = tablaPedidoActual.getSelectedRow();
+                        Object idObj = tablaPedidoActual.getModel().getValueAt(fila, 0);
+                        if (idObj == null) return;
+                        String idPlato = idObj.toString();
+
+                        DetallePedido detalleEncontrado = controladorPicada.getDetallesPedidoActual().stream()
+                                .filter(d -> d.getPlato() != null && idPlato.equals(d.getPlato().getIdPlato()))
+                                .findFirst().orElse(null);
+
+                        if (detalleEncontrado != null) {
+                            String mensaje = String.format("Plato: %s\nCantidad: %d\nObservaciones: %s\nSubtotal: $%d",
+                                    detalleEncontrado.getPlato() != null ? detalleEncontrado.getPlato().getNombre() : "",
+                                    detalleEncontrado.getCantidad(),
+                                    detalleEncontrado.getObservaciones() != null ? detalleEncontrado.getObservaciones() : "",
+                                    detalleEncontrado.getSubTotal());
+                            JOptionPane.showMessageDialog(panelPedidos.this, mensaje, "Detalle del ítem", JOptionPane.INFORMATION_MESSAGE);
+                        }
+                    }
+                }
+            });
+        }
+        }
+    private void actualizarEstadoIniciar() {
+        boolean mesaSeleccionada = BoxMesas != null && BoxMesas.getSelectedItem() != null;
+        boolean garzonSeleccionado = BoxGarzones != null && BoxGarzones.getSelectedItem() != null;
+        if (iniciarPedidoButton != null) iniciarPedidoButton.setEnabled(mesaSeleccionada && garzonSeleccionado);
+    }
 }

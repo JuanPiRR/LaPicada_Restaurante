@@ -2,10 +2,13 @@
 package controlador;
 
 import modelo.*; // Importar todas las clases del modelo
+import vista.VistaPrincipal;
 
 import javax.swing.*;
+import java.awt.*;
 import java.io.*;
 import java.util.*;
+import java.util.List;
 import java.util.stream.Collectors;
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
@@ -157,17 +160,20 @@ public class ControladorPicada {
         if (mesa == null || garzon == null) throw new Exception("Mesa o Garzón no encontrados.");
         if (!mesa.getEstado().equals("DISPONIBLE")) throw new Exception("La mesa está ocupada.");
 
-        // Buscar o crear cliente
-        Cliente cliente = buscarCliente(rutCliente);
-        if (cliente == null) {
-            cliente = new Cliente(rutCliente, nombreCliente);
-            clientes.add(cliente);
-        }
+        // Buscar o crear cliente solo si se entrega un RUT no vacío
+        Cliente cliente = null;
+        if (rutCliente != null && !rutCliente.trim().isEmpty()) {
+            cliente = buscarCliente(rutCliente);
+            if (cliente == null) {
+                cliente = new Cliente(rutCliente, nombreCliente != null ? nombreCliente : "");
+                clientes.add(cliente);
+            }
+        } // si rutCliente es nulo/vacío, cliente queda en null (opcional)
 
         // Cambiar el estado de la mesa
         mesa.setEstado("OCUPADA");
 
-        // Crear el encabezado del Pedido
+        // Crear el encabezado del Pedido (cliente puede ser null)
         pedidoActual = new Pedido(generarIdPedido(), new Date(), "ABIERTO", mesa, garzon, cliente);
     }
 
@@ -187,22 +193,31 @@ public class ControladorPicada {
         pedidoActual.agregarDetalle(plato, cantidad, observaciones);
     }
 
-    // 3. Confirmar pedido y enviar a cocina
+    // 3. Confirmar pedido y mover a historial (no descontar stock ni poner EN_PREPARACION)
     public void confirmarPedidoYEnviarCocina() throws Exception {
         if (pedidoActual == null) throw new Exception("No hay pedido activo para confirmar.");
-
-        // Descontar stock
+        // Validar stock antes de confirmar
         for (DetallePedido det : pedidoActual.getDetalles()) {
-            if (det.getPlato() != null) {
-                det.getPlato().restarStock(det.getCantidad());
+            Plato plato = det.getPlato();
+            if (plato == null) continue;
+            if (plato.getDisponibilidad() < det.getCantidad()) {
+                throw new Exception("Stock insuficiente para: " + plato.getNombre());
             }
         }
 
-        // Marcar estado y mover a historial para preparación/pago posterior
-        pedidoActual.setEstado("EN_PREPARACION");
+        // Descontar stock al confirmar
+        for (DetallePedido det : pedidoActual.getDetalles()) {
+            Plato plato = det.getPlato();
+            if (plato != null) {
+                plato.restarStock(det.getCantidad());
+            }
+        }
+
+        // Marcar estado ABIERTO y mover a historial
+        pedidoActual.setEstado("ABIERTO");
         pedidos.add(pedidoActual);
 
-        // Persistir y limpiar pedidoActual (liberar UI para nuevo pedido)
+        // Persistir y limpiar pedidoActual
         guardarDatosPersistentes();
         pedidoActual = null;
     }
@@ -795,4 +810,347 @@ public class ControladorPicada {
         proveedores.remove(p);
         guardarDatosPersistentes();
     }
+
+    public void cargarTablaCarta(JTable tablaCarta) {
+        if (tablaCarta == null) return;
+
+        String[] columnas = {"ID Plato", "Nombre", "Precio", "Tipo", "Disponibilidad"};
+        List<Plato> lista = this.carta != null ? this.carta : new ArrayList<>();
+
+        Object[][] datos = new Object[lista.size()][columnas.length];
+        for (int i = 0; i < lista.size(); i++) {
+            Plato p = lista.get(i);
+            datos[i][0] = p.getIdPlato();
+            datos[i][1] = p.getNombre();
+            datos[i][2] = p.getPrecio();
+            datos[i][3] = p.getTipo();
+            datos[i][4] = p.getDisponibilidad();
+        }
+
+        tablaCarta.setModel(new javax.swing.table.DefaultTableModel(datos, columnas) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        });
+    }
+    public void cargarTablaPedidoActual(JTable tablaPedidoActual) {
+        if (tablaPedidoActual == null) return;
+
+        String[] columnas = {"ID Plato", "Nombre", "Cantidad", "Observaciones", "Subtotal"};
+        List<DetallePedido> lista = getDetallesPedidoActual();
+
+        Object[][] datos = new Object[lista.size()][columnas.length];
+        for (int i = 0; i < lista.size(); i++) {
+            DetallePedido d = lista.get(i);
+            Plato p = d.getPlato();
+            datos[i][0] = p != null ? p.getIdPlato() : "";
+            datos[i][1] = p != null ? p.getNombre() : "";
+            datos[i][2] = d.getCantidad();
+            datos[i][3] = d.getObservaciones();
+            datos[i][4] = d.getSubTotal();
+        }
+
+        tablaPedidoActual.setModel(new javax.swing.table.DefaultTableModel(datos, columnas) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        });
+    }
+
+    public void cargarTablaPedidosConfirmados(JTable tablaPedidosConfirmados) {
+        if (tablaPedidosConfirmados == null) return;
+
+        String[] columnas = {"ID Pedido", "Fecha", "Estado", "Mesa", "Garzón", "Cliente", "Total"};
+        List<Pedido> lista = this.pedidos != null ? this.pedidos : new ArrayList<>();
+
+        Object[][] datos = new Object[lista.size()][columnas.length];
+        for (int i = 0; i < lista.size(); i++) {
+            Pedido ped = lista.get(i);
+            datos[i][0] = ped.getIdPedido();
+            datos[i][1] = ped.getFechaHora();
+            datos[i][2] = ped.getEstado();
+            datos[i][3] = ped.getMesa() != null ? ped.getMesa().getNumero() : "";
+            datos[i][4] = ped.getGarzon() != null ? ped.getGarzon().getNombre() : "";
+            datos[i][5] = ped.getCliente() != null ? ped.getCliente().getNombre() : "";
+            datos[i][6] = ped.calcularTotal();
+        }
+
+        tablaPedidosConfirmados.setModel(new javax.swing.table.DefaultTableModel(datos, columnas) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        });
+    }
+
+    public void cargarTablaDetallePedidoConfirmado(JTable tablaDetallePedidoConfirmado, String idPedido) {
+        if (tablaDetallePedidoConfirmado == null) return;
+
+        Pedido pedido = pedidos.stream()
+                .filter(p -> p.getIdPedido().equals(idPedido))
+                .findFirst()
+                .orElse(null);
+
+        if (pedido == null) return;
+
+        String[] columnas = {"ID Plato", "Nombre", "Cantidad", "Observaciones", "Subtotal"};
+        List<DetallePedido> lista = pedido.getDetalles();
+
+        Object[][] datos = new Object[lista.size()][columnas.length];
+        for (int i = 0; i < lista.size(); i++) {
+            DetallePedido d = lista.get(i);
+            Plato p = d.getPlato();
+            datos[i][0] = p != null ? p.getIdPlato() : "";
+            datos[i][1] = p != null ? p.getNombre() : "";
+            datos[i][2] = d.getCantidad();
+            datos[i][3] = d.getObservaciones();
+            datos[i][4] = d.getSubTotal();
+        }
+
+        tablaDetallePedidoConfirmado.setModel(new javax.swing.table.DefaultTableModel(datos, columnas) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        });
+    }
+
+    // Iniciar preparación de un pedido del historial: ahora valida stock y descuenta disponibilidad
+    public void iniciarPreparacionPedido(String idPedido) throws Exception {
+        Pedido pedido = pedidos.stream()
+                .filter(p -> p.getIdPedido().equals(idPedido))
+                .findFirst()
+                .orElse(null);
+
+        if (pedido == null) throw new Exception("Pedido no encontrado.");
+        if (!"ABIERTO".equalsIgnoreCase(pedido.getEstado())) throw new Exception("Sólo pedidos en estado ABIERTO pueden iniciar preparación.");
+
+        // Validar stock antes de descontar
+        for (DetallePedido det : pedido.getDetalles()) {
+            Plato plato = det.getPlato();
+            if (plato == null) continue;
+            if (plato.getDisponibilidad() < det.getCantidad()) {
+                throw new Exception("Stock insuficiente para: " + plato.getNombre());
+            }
+        }
+
+        // Descontar stock
+        for (DetallePedido det : pedido.getDetalles()) {
+            Plato plato = det.getPlato();
+            if (plato != null) {
+                plato.restarStock(det.getCantidad());
+            }
+        }
+
+        pedido.setEstado("EN_PREPARACION");
+        guardarDatosPersistentes();
+    }
+
+    public void eliminarPedido(String idPedido) {
+        Pedido pedido = pedidos.stream()
+                .filter(p -> p.getIdPedido().equals(idPedido))
+                .findFirst()
+                .orElse(null);
+
+        if (pedido != null) {
+            // Liberar mesa si aplica
+            Mesa m = pedido.getMesa();
+            if (m != null) m.setEstado("DISPONIBLE");
+
+            pedidos.remove(pedido);
+            guardarDatosPersistentes();
+        }
+    }
+
+    public void procesarPagoPedido(String idPedido, VistaPrincipal mainFrame, CardLayout parentCardLayout, JPanel parentContentPanel) {
+        Pedido pedido = pedidos.stream()
+                .filter(p -> p.getIdPedido().equals(idPedido))
+                .findFirst()
+                .orElse(null);
+
+        if (pedido == null) {
+            JOptionPane.showMessageDialog(mainFrame, "Pedido no encontrado.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        if ("PAGADO".equalsIgnoreCase(pedido.getEstado()) || pedido.isPagado()) {
+            JOptionPane.showMessageDialog(mainFrame, "El pedido ya está pagado.", "Atención", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        // Solo permitir pago si el pedido fue ENTREGADO
+        if (!"ENTREGADO".equalsIgnoreCase(pedido.getEstado())) {
+            JOptionPane.showMessageDialog(mainFrame, "El pedido debe estar ENTREGADO para procesar el pago.", "Atención", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        final int total = pedido.calcularTotal();
+        final int sugerido10 = (int) Math.round(total * 0.10);
+
+        // Componentes del panel único
+        JPanel panel = new JPanel(new GridLayout(7, 2, 6, 6));
+        panel.add(new JLabel("Total pedido:"));
+        JLabel lblTotal = new JLabel("$" + total);
+        panel.add(lblTotal);
+
+        panel.add(new JLabel("Método de pago:"));
+        JComboBox<String> cbMetodo = new JComboBox<>(new String[]{"EFECTIVO", "TARJETA", "TRANSFERENCIA"});
+        panel.add(cbMetodo);
+
+        panel.add(new JLabel("Tipo de documento:"));
+        JComboBox<String> cbTipoBoleta = new JComboBox<>(new String[]{"Boleta", "Factura"});
+        panel.add(cbTipoBoleta);
+
+        JCheckBox chkPropina10 = new JCheckBox("Agregar propina 10% (sugerida)");
+        chkPropina10.setSelected(true);
+        panel.add(chkPropina10);
+        JSpinner spPropina = new JSpinner(new SpinnerNumberModel(sugerido10, 0, 1_000_000, 100));
+        spPropina.setEnabled(false);
+        panel.add(spPropina);
+
+        panel.add(new JLabel("Propina seleccionada:"));
+        JLabel lblPropina = new JLabel("$" + sugerido10);
+        panel.add(lblPropina);
+
+        panel.add(new JLabel("Monto entregado (solo EFECTIVO):"));
+        SpinnerNumberModel modeloMonto = new SpinnerNumberModel(total + sugerido10, 0, 10_000_000, 100);
+        JSpinner spMonto = new JSpinner(modeloMonto);
+        panel.add(spMonto);
+
+        // Listeners
+        chkPropina10.addItemListener(e -> {
+            boolean use10 = chkPropina10.isSelected();
+            spPropina.setEnabled(!use10);
+            int prop = use10 ? sugerido10 : (Integer) spPropina.getValue();
+            lblPropina.setText("$" + prop);
+            modeloMonto.setValue(total + prop);
+        });
+
+        spPropina.addChangeListener(e -> {
+            if (!chkPropina10.isSelected()) {
+                int prop = (Integer) spPropina.getValue();
+                lblPropina.setText("$" + prop);
+                modeloMonto.setValue(total + prop);
+            }
+        });
+
+        int opcion = JOptionPane.showConfirmDialog(mainFrame, panel, "Procesar pago del pedido " + idPedido,
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (opcion != JOptionPane.OK_OPTION) return;
+
+        String metodo = cbMetodo.getSelectedItem().toString();
+        String tipoDocumento = cbTipoBoleta.getSelectedItem().toString();
+        int propina = chkPropina10.isSelected() ? sugerido10 : (Integer) spPropina.getValue();
+        int montoEntregado = (Integer) spMonto.getValue();
+
+        try {
+            // crear pago y calcular total a pagar
+            Pago pago = pedido.crearPago(metodo, propina);
+            int totalAPagar = pedido.calcularTotal() + propina;
+
+            if ("EFECTIVO".equalsIgnoreCase(metodo)) {
+                if (montoEntregado < totalAPagar) {
+                    throw new Exception("Dinero insuficiente. Se requiere al menos $" + totalAPagar);
+                }
+                pedido.procesarPago(montoEntregado);
+            } else {
+                // para tarjeta/transferencia se procesa con el total
+                pedido.procesarPago(totalAPagar);
+            }
+
+            guardarDatosPersistentes();
+
+            // Construir boleta para mostrar
+            StringBuilder sb = new StringBuilder();
+            sb.append("----- ").append(tipoDocumento).append(" -----\n");
+            sb.append("ID Pedido: ").append(pedido.getIdPedido()).append("\n");
+            sb.append("Fecha: ").append(pedido.getFechaHora()).append("\n");
+            sb.append("Mesa: ").append(pedido.getMesa() != null ? pedido.getMesa().getNumero() : "").append("\n");
+            sb.append("Garzón: ").append(pedido.getGarzon() != null ? pedido.getGarzon().getNombre() : "").append("\n\n");
+            sb.append("Items:\n");
+            for (DetallePedido d : pedido.getDetalles()) {
+                String nombre = d.getPlato() != null ? d.getPlato().getNombre() : "";
+                sb.append(String.format("%s x%d  = $%d\n", nombre, d.getCantidad(), d.getSubTotal()));
+            }
+            sb.append("\nSubtotal: $").append(pedido.calcularTotal()).append("\n");
+            sb.append("Propina: $").append(propina).append("\n");
+            sb.append("Total a pagar: $").append(totalAPagar).append("\n");
+            sb.append("Método: ").append(metodo).append("\n");
+            if ("EFECTIVO".equalsIgnoreCase(metodo)) {
+                int vuelto = pedido.getPago() != null ? pedido.getPago().getVuelto() : (montoEntregado - totalAPagar);
+                sb.append("Monto entregado: $").append(montoEntregado).append("\n");
+                sb.append("Vuelto: $").append(vuelto).append("\n");
+            }
+
+            JTextArea ta = new JTextArea(sb.toString());
+            ta.setEditable(false);
+            ta.setFont(new java.awt.Font("Monospaced", java.awt.Font.PLAIN, 12));
+            JScrollPane scroll = new JScrollPane(ta);
+            scroll.setPreferredSize(new java.awt.Dimension(400, 400));
+            JOptionPane.showMessageDialog(mainFrame, scroll, "Boleta", JOptionPane.INFORMATION_MESSAGE);
+
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(mainFrame, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    public List<Mesa> getMesas() {
+        return mesas;
+    }
+    public void empezarEdicionPedido(String idPedido) throws Exception {
+        Pedido pedido = pedidos.stream()
+                .filter(p -> p.getIdPedido().equals(idPedido))
+                .findFirst()
+                .orElse(null);
+
+        if (pedido == null) throw new Exception("Pedido no encontrado.");
+        if ("PAGADO".equalsIgnoreCase(pedido.getEstado())) throw new Exception("No se puede editar un pedido ya pagado.");
+
+        // Restaurar stock previamente descontado (devolver lo que se había restado)
+        for (DetallePedido det : pedido.getDetalles()) {
+            Plato plato = det.getPlato();
+            if (plato != null) {
+                // usar set/get de disponibilidad (disponibilidad += cantidad)
+                plato.setDisponibilidad(plato.getDisponibilidad() + det.getCantidad());
+            }
+        }
+
+        // Quitar del historial y setear como pedido actual para editar
+        pedidos.remove(pedido);
+        pedido.setEstado("EDITANDO");
+        this.pedidoActual = pedido;
+
+        guardarDatosPersistentes();
+    }
+
+    public void marcarPedidoListo(String idPedido) throws Exception {
+        Pedido pedido = pedidos.stream()
+                .filter(p -> p.getIdPedido().equals(idPedido))
+                .findFirst()
+                .orElse(null);
+        if (pedido == null) throw new Exception("Pedido no encontrado.");
+        // Solo permitir si está en PREPARACION
+        if (!"EN_PREPARACION".equalsIgnoreCase(pedido.getEstado())) {
+            throw new Exception("Sólo pedidos en EN_PREPARACION pueden marcarse como LISTO.");
+        }
+        pedido.setEstado("LISTO");
+        guardarDatosPersistentes();
+    }
+
+    public void marcarPedidoEntregado(String idPedido) throws Exception {
+        Pedido pedido = pedidos.stream()
+                .filter(p -> p.getIdPedido().equals(idPedido))
+                .findFirst()
+                .orElse(null);
+        if (pedido == null) throw new Exception("Pedido no encontrado.");
+        // Solo permitir si está en LISTO
+        if (!"LISTO".equalsIgnoreCase(pedido.getEstado())) {
+            throw new Exception("Sólo pedidos en LISTO pueden marcarse como ENTREGADO.");
+        }
+        pedido.setEstado("ENTREGADO");
+        guardarDatosPersistentes();
+    }
+
+
 }

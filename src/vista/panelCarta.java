@@ -2,6 +2,7 @@ package vista;
 
 import controlador.ControladorPicada;
 import modelo.Plato;
+import modelo.Recepcion;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
@@ -118,54 +119,34 @@ public class panelCarta extends JPanel {
     }
 
     private void actualizarCarta() {
-        if (tablaCarta == null) return;
-
-        //definir columnas
-        String[] columnas = {"ID", "Nombre", "Categoría", "Precio", "Disponibilidad"};
-        DefaultTableModel modelo = modeloTabla(columnas);
-
-        tablaCarta.setModel(modelo);
-        // Ajustes opcionales de ancho/orden
-        if (tablaCarta.getColumnModel().getColumnCount() > 0) {
-            tablaCarta.getColumnModel().getColumn(0).setPreferredWidth(60);  // ID
-            tablaCarta.getColumnModel().getColumn(1).setPreferredWidth(200); // Nombre
-            tablaCarta.getColumnModel().getColumn(2).setPreferredWidth(100); // Categoría
-            tablaCarta.getColumnModel().getColumn(3).setPreferredWidth(80);  // Precio
-            tablaCarta.getColumnModel().getColumn(4).setPreferredWidth(80);  // Disponibilidad
-        }
-    }
-
-    private DefaultTableModel modeloTabla(String[] columnas) {
-        DefaultTableModel modelo = new DefaultTableModel(columnas, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
-            }
+        List<Plato> lista = controladorPicada.getCarta();
+        String[] cols = {"ID", "Nombre", "Categoría", "Precio", "Disponibilidad"};
+        DefaultTableModel model = new DefaultTableModel(cols, 0) {
+            @Override public boolean isCellEditable(int row, int column) { return false; }
         };
-        List<Plato> platos = controladorPicada.getCarta();
-        if (platos != null) {
-            for (Plato p : platos) {
-                Object precio;
-                try {
-                    precio = p.getPrecio();
-                } catch (Throwable ex1) {
-                    try {
-                        precio = p.getPrecio();
-                    } catch (Throwable ex2) {
-                        precio = "";
-                    }
-                }
-                Object[] fila = {
-                        p.getIdPlato(),
-                        p.getNombre(),
-                        p.getTipo(),
-                        precio,
-                        p.getDisponibilidad()
-                };
-                modelo.addRow(fila);
+        if (lista != null){
+            for (Plato p : lista){
+               model.addRow(new Object[]{ p.getIdPlato(), p.getNombre(), p.getTipo(), p.getPrecio(), p.getDisponibilidad() });
             }
         }
-        return modelo;
+        tablaCarta.setModel(model);
+/*List<Recepcion> lista = controladorPicada.getRecepciones();
+        String[] cols = {"ID", "Fecha", "Estado", "Orden", "Transportista", "Observaciones"};
+        DefaultTableModel model = new DefaultTableModel(cols, 0) {
+            @Override public boolean isCellEditable(int row, int column) { return false; }
+        };
+
+        if (lista != null) {
+            for (Recepcion r : lista) {
+                String fecha = r.getFecha() != null ? sdf.format(r.getFecha()) : "";
+                String ordenId = r.getOrdenCompra() != null ? r.getOrdenCompra().getIdOrden() : "";
+                String trans = r.getTransportista() != null ? r.getTransportista().getNombre() : "";
+                model.addRow(new Object[]{ r.getIdRecepcion(), fecha, r.getEstado(), ordenId, trans, r.getObservaciones() });
+            }
+        }
+
+        tablaRecepciones.setModel(model);
+    }*/
     }
 
     public void filtrarPorCategoria() {

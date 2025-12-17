@@ -33,19 +33,28 @@ public class Pedido implements Serializable {
 
     // Método Lógico: Agregar un plato a la lista de detalles
     public void agregarDetalle(Plato plato, int cantidad, String obs) {
-        // Verificar si el plato ya está en el pedido para sumar cantidad (opcional, pero recomendado)
+        // Verificar si el plato ya está en el pedido para sumar cantidad y añadir observaciones
         for (DetallePedido d : detalles) {
-            if (d.getPlato().getIdPlato().equals(plato.getIdPlato())) {
+            if (d.getPlato() != null && d.getPlato().getIdPlato().equals(plato.getIdPlato())) {
                 d.setCantidad(d.getCantidad() + cantidad);
                 d.setSubTotal(d.getCantidad() * plato.getPrecio());
+                if (obs != null && !obs.trim().isEmpty()) {
+                    String prev = d.getObservaciones() != null ? d.getObservaciones().toString() : "";
+                    if (!prev.isEmpty()) prev = prev + " | ";
+                    prev = prev + obs;
+                    d.setObservaciones(prev);
+                    // También mantener nota resumen en pedido
+                    this.observaciones += "[" + plato.getNombre() + ": " + obs + "] ";
+                }
                 return;
             }
         }
-        // Si no está, crear nuevo detalle
+        // Si no está, crear nuevo detalle y asignar observaciones
         DetallePedido nuevoDetalle = new DetallePedido(plato, cantidad);
+        nuevoDetalle.setObservaciones(obs != null ? obs : "");
         this.detalles.add(nuevoDetalle);
 
-        if (obs != null && !obs.isEmpty()) {
+        if (obs != null && !obs.trim().isEmpty()) {
             this.observaciones += "[" + plato.getNombre() + ": " + obs + "] ";
         }
     }
@@ -111,4 +120,12 @@ public class Pedido implements Serializable {
 
     public String getObservaciones() { return observaciones; }
     public void setObservaciones(String observaciones) { this.observaciones = observaciones; }
+
+    public Date getFechaHora() {
+        return fechaHora;
+    }
+
+    public void setFechaHora(Date fechaHora) {
+        this.fechaHora = fechaHora;
+    }
 }

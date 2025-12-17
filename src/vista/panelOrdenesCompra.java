@@ -63,6 +63,7 @@ public class panelOrdenesCompra extends JPanel {
         }
     }
 
+
     // Inicializa modelos básicos de tablas si son null y listeners de botones/selección
 
     // Helper: obtener todas las órdenes combinando estados expuestos por el controlador
@@ -316,22 +317,120 @@ public class panelOrdenesCompra extends JPanel {
         }
 
         List<Transportista> tlist = controladorPicada.getTransportistas();
+
+        // Combo con "ID - Nombre"
         JComboBox<String> cbTrans = new JComboBox<>();
         cbTrans.addItem("N/A"); // Opción para no seleccionar transportista
-        if (tlist != null) for (Transportista t : tlist) cbTrans.addItem(t.getIdTransportista());
+        if (tlist != null) {
+            for (Transportista t : tlist) {
+                String label = (t.getIdTransportista() != null ? t.getIdTransportista() : "") + " - " + (t.getNombre() != null ? t.getNombre() : "");
+                cbTrans.addItem(label);
+            }
+        }
 
+        // Checkbox y campos para nuevo transportista (ahora incluyen empresa, patente y teléfono obligatorios)
+        JCheckBox chkNuevo = new JCheckBox("Nuevo transportista");
+        JTextField tfNewId = new JTextField();
+        JTextField tfNewNombre = new JTextField();
+        JTextField tfEmpresa = new JTextField();
+        JTextField tfPatente = new JTextField();
+        JTextField tfTelefono = new JTextField();
+
+        // Inicialmente deshabilitados (sólo habilitar si chkNuevo)
+        tfNewId.setEnabled(false);
+        tfNewNombre.setEnabled(false);
+        tfEmpresa.setEnabled(false);
+        tfPatente.setEnabled(false);
+        tfTelefono.setEnabled(false);
+
+        chkNuevo.addActionListener(ev -> {
+            boolean nuevo = chkNuevo.isSelected();
+            cbTrans.setEnabled(!nuevo);
+            tfNewId.setEnabled(nuevo);
+            tfNewNombre.setEnabled(nuevo);
+            tfEmpresa.setEnabled(nuevo);
+            tfPatente.setEnabled(nuevo);
+            tfTelefono.setEnabled(nuevo);
+        });
+
+        // Observaciones
         JTextField tfObs = new JTextField();
 
-        Object[] message = {"Transportista (ID):", cbTrans, "Observaciones:", tfObs};
-        int opt = JOptionPane.showConfirmDialog(this, message, "Registrar Recepción de Orden", JOptionPane.OK_CANCEL_OPTION);
+        // Armar panel con layout sencillo
+        JPanel panel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(4, 4, 4, 4);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
 
+        gbc.gridx = 0; gbc.gridy = 0; panel.add(new JLabel("Transportista (ID - Nombre):"), gbc);
+        gbc.gridx = 1; gbc.gridy = 0; gbc.weightx = 1.0; panel.add(cbTrans, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 1; gbc.weightx = 0; panel.add(chkNuevo, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 2; panel.add(new JLabel("Nuevo ID:"), gbc);
+        gbc.gridx = 1; gbc.gridy = 2; panel.add(tfNewId, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 3; panel.add(new JLabel("Nuevo Nombre:"), gbc);
+        gbc.gridx = 1; gbc.gridy = 3; panel.add(tfNewNombre, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 4; panel.add(new JLabel("Empresa (obligatorio):"), gbc);
+        gbc.gridx = 1; gbc.gridy = 4; panel.add(tfEmpresa, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 5; panel.add(new JLabel("Patente (obligatorio):"), gbc);
+        gbc.gridx = 1; gbc.gridy = 5; panel.add(tfPatente, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 6; panel.add(new JLabel("Teléfono (obligatorio):"), gbc);
+        gbc.gridx = 1; gbc.gridy = 6; panel.add(tfTelefono, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 7; panel.add(new JLabel("Observaciones:"), gbc);
+        gbc.gridx = 1; gbc.gridy = 7; panel.add(tfObs, gbc);
+
+        // Mostrar diálogo
+        int opt = JOptionPane.showConfirmDialog(this, panel, "Registrar Recepción de Orden", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (opt == JOptionPane.OK_OPTION) {
-            String idTrans = cbTrans.getSelectedItem().equals("N/A") ? null : (String) cbTrans.getSelectedItem();
+            String idTrans = null;
             String obs = tfObs.getText();
+
+            if (chkNuevo.isSelected()) {
+                String newId = tfNewId.getText().trim();
+                String newName = tfNewNombre.getText().trim();
+                String empresa = tfEmpresa.getText().trim();
+                String patente = tfPatente.getText().trim();
+                String telefono = tfTelefono.getText().trim();
+
+                // Validaciones: todos obligatorios
+                if (newId.isEmpty() || newName.isEmpty() || empresa.isEmpty() || patente.isEmpty() || telefono.isEmpty()) {
+                    JOptionPane.showMessageDialog(this, "Debe ingresar ID, Nombre, Empresa, Patente y Teléfono para el nuevo transportista.", "Atención", JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+
+                try {
+                    // Crear y registrar transportista en el controlador
+                    modelo.Transportista t = new modelo.Transportista(newId, newName, empresa, patente, telefono);
+                    controladorPicada.agregarTransportista(newId, newName, empresa, patente, telefono);
+
+                    idTrans = newId;
+                    // Añadir al combo mostrando id junto al nombre (ej: "ID - Nombre")
+                    cbTrans.addItem(newId + " - " + newName);
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(this, "Error al registrar transportista: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+            } else {
+                Object sel = cbTrans.getSelectedItem();
+                if (sel != null && !"N/A".equals(sel.toString())) {
+                    String selStr = sel.toString();
+                    // Extraer ID antes del " - "
+                    int idx = selStr.indexOf(" - ");
+                    idTrans = idx > 0 ? selStr.substring(0, idx).trim() : selStr.trim();
+                } else {
+                    idTrans = null;
+                }
+            }
 
             try {
                 controladorPicada.registrarRecepcion(idOrden, idTrans, obs);
-
                 JOptionPane.showMessageDialog(this, "Recepción registrada con éxito. Pendiente de revisión en el panel de Recepciones.", "Éxito", JOptionPane.INFORMATION_MESSAGE);
                 actualizarTabla();
                 cargarDetallesOrdenCompra();
