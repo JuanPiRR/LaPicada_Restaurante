@@ -10,6 +10,7 @@ import javax.swing.*;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableCellEditor;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -252,62 +253,87 @@ public class panelRecepciones extends JPanel{
         List<Recepcion> lista = controladorPicada.getRecepciones();
         Recepcion r = lista.get(row);
 
-        if (!"PENDIENTE".equals(r.getEstado()) && !"INCOMPLETA".equals(r.getEstado())) {
+        if (!"PENDIENTE".equalsIgnoreCase(r.getEstado()) && !"INCOMPLETA".equalsIgnoreCase(r.getEstado())) {
             JOptionPane.showMessageDialog(this, "Solo se pueden procesar recepciones PENDIENTE o INCOMPLETA.", "Atención", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
-        // --- 1. Recoger cantidades de la tabla (TU CÓDIGO ACTUAL, ESTÁ BIEN) ---
-        DefaultTableModel model = (DefaultTableModel) tablaDetallesOrden.getModel();
         OrdenCompra oc = r.getOrdenCompra();
-        if (oc != null && oc.getDetalles() != null) {
-            for (int i = 0; i < model.getRowCount(); i++) {
-                String idInsumo = model.getValueAt(i, 0) != null ? model.getValueAt(i, 0).toString() : "";
-                Object recibidoObj = model.getValueAt(i, 3);
-                int recibido = 0;
-                try {
-                    if (recibidoObj != null && !recibidoObj.toString().trim().isEmpty()) {
-                        recibido = Integer.parseInt(recibidoObj.toString().trim());
-                        if (recibido < 0) recibido = 0;
-                    }
-                } catch (NumberFormatException ex) {
-                    recibido = 0;
-                }
-
-                // Buscar detalle correspondiente y actualizar la cantidad a la recibida
-                for (DetalleOrdenCompra d : oc.getDetalles()) {
-                    if (d.getInsumo() != null && idInsumo.equals(d.getInsumo().getIdInsumo())) {
-                        try {
-                            d.setCantidad(recibido);
-                        } catch (Exception ex) {
-                            JOptionPane.showMessageDialog(this, "Error al actualizar cantidad para insumo " + idInsumo + ": " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-                        }
-                    }
-                }
-            }
+        if (oc == null || oc.getDetalles() == null) {
+            JOptionPane.showMessageDialog(this, "Orden asociada no encontrada o sin detalles.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
         }
-        // --- FIN DE RECOLECCIÓN DE CANTIDADES ---
 
-        // --- 2. SOLICITAR ESTADO FINAL ---
-        JComboBox<String> cbEstado = new JComboBox<>(new String[]{"COMPLETA", "INCOMPLETA"});
-        int opt = JOptionPane.showConfirmDialog(this, new Object[]{"Seleccione el estado final:", cbEstado}, "Finalizar Recepción", JOptionPane.OK_CANCEL_OPTION);
+        // Si hay una celda en edición, forzar que termine y se copie el valor al modelo
+        if (tablaDetallesOrden.isEditing()) {
+            TableCellEditor editor = tablaDetallesOrden.getCellEditor();
+            if (editor != null) editor.stopCellEditing();
+        }
 
-        if (opt == JOptionPane.OK_OPTION) {
-            String estadoFinal = (String) cbEstado.getSelectedItem();
+        DefaultTableModel model = (DefaultTableModel) tablaDetallesOrden.getModel();
 
+        // Detectar columnas por nombre
+        int colId = -1, colSolicitado = -1, colEntregado = -1;
+        for (int c = 0; c < model.getColumnCount(); c++) {
+            String name = model.getColumnName(c).toLowerCase();
+            if (colId == -1 && (name.contains("id") || name.contains("insumo"))) colId = c;
+            if (colSolicitado == -1 && (name.contains("solicit") || name.contains("pedido") || (name.contains("cantidad") && !name.contains("entreg")))) colSolicitado = c;
+            if (colEntregado == -1 && name.contains("entreg")) colEntregado = c;
+        }
+        if (colId == -1) colId = 0;
+        if (colSolicitado == -1) colSolicitado = Math.min(1, Math.max(0, model.getColumnCount() - 1));
+        if (colEntregado == -1) colEntregado = Math.min(2, Math.max(0, model.getColumnCount() - 1));
+
+        boolean completa = true;
+
+        for (int i = 0; i < model.getRowCount(); i++) {
+            Object idObj = model.getValueAt(i, colId);
+            String idInsumo = idObj != null ? idObj.toString().trim() : "";
+
+            int entregado = 0;
             try {
-                // Usar el método del controlador para aplicar stock/precio y persistir
-                controladorPicada.procesarRecepcion(r.getIdRecepcion(), estadoFinal);
+                Object valEntregado = model.getValueAt(i, colEntregado);
+                entregado = valEntregado != null ? Integer.parseInt(valEntregado.toString().trim()) : 0;
+            } catch (NumberFormatException ex) {
+                entregado = 0;
+            }
 
-                JOptionPane.showMessageDialog(this, "Recepción procesada y marcada como: " + estadoFinal, "Éxito", JOptionPane.INFORMATION_MESSAGE);
-                actualizarTablaRecepciones();
-                cargarDetallesSeleccion();
-            } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this, "Error al procesar: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-                // no es necesario revertir manualmente aquí porque el controlador no habrá persistido si falla
+            int solicitado = 0;
+            try {
+                Object valSolicitado = model.getValueAt(i, colSolicitado);
+                solicitado = valSolicitado != null ? Integer.parseInt(valSolicitado.toString().trim()) : 0;
+            } catch (NumberFormatException ex) {
+                solicitado = 0;
+            }
+
+            DetalleOrdenCompra detalleEncontrado = null;
+            for (DetalleOrdenCompra d : oc.getDetalles()) {
+                if (d.getInsumo() != null && idInsumo.equals(d.getInsumo().getIdInsumo())) {
+                    detalleEncontrado = d;
+                    break;
+                }
+            }
+
+            if (detalleEncontrado != null) {
+                // CAMBIO CLAVE: usar setCantidadRecibida() en lugar de setCantidad()
+                detalleEncontrado.setCantidadRecibida(entregado);
+            }
+
+            if (entregado < solicitado) {
+                completa = false;
             }
         }
-        // Si el usuario presiona CANCEL, no se hace nada y el estado sigue siendo PENDIENTE/INCOMPLETA.
+
+        String estadoFinal = completa ? "COMPLETA" : "INCOMPLETA";
+
+        try {
+            controladorPicada.procesarRecepcion(r.getIdRecepcion(), estadoFinal);
+            actualizarTablaRecepciones();
+            cargarDetallesSeleccion();
+            JOptionPane.showMessageDialog(this, "Recepción procesada como " + estadoFinal + ".", "Éxito", JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Error al procesar recepción: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     public void verDetalles() {
@@ -359,44 +385,53 @@ public class panelRecepciones extends JPanel{
     private void cargarDetallesSeleccion() {
         int row = tablaRecepciones.getSelectedRow();
         if (row < 0) {
-            // limpiar detalles
-            DefaultTableModel empty = new DefaultTableModel(new String[]{"Insumo ID", "Nombre", "Cant Pedida", "Recibido"}, 0) {
-                @Override public boolean isCellEditable(int r, int c) { return c == 3; }
-            };
-            tablaDetallesOrden.setModel(empty);
+            tablaDetallesOrden.setModel(new DefaultTableModel(new String[]{"ID Insumo", "Nombre", "Solicitado", "Entregado"}, 0));
             return;
         }
 
         List<Recepcion> lista = controladorPicada.getRecepciones();
-        if (lista == null || row >= lista.size()) {
-            JOptionPane.showMessageDialog(this, "Recepción inválida.", "Error", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-
         Recepcion r = lista.get(row);
         OrdenCompra oc = r.getOrdenCompra();
 
-        String[] cols = {"Insumo ID", "Nombre", "Cant Pedida", "Recibido"};
-        DefaultTableModel model = new DefaultTableModel(cols, 0) {
-            @Override public boolean isCellEditable(int r, int c) {
-                String estado = lista.get(row).getEstado();
-                boolean editable = c == 3 && "PENDIENTE".equalsIgnoreCase(estado);
-                return editable;
+        if (oc == null || oc.getDetalles() == null || oc.getDetalles().isEmpty()) {
+            tablaDetallesOrden.setModel(new DefaultTableModel(new String[]{"ID Insumo", "Nombre", "Solicitado", "Entregado"}, 0));
+            return;
+        }
+
+        String[] columnas = {"ID Insumo", "Nombre", "Solicitado", "Entregado"};
+        Object[][] datos = new Object[oc.getDetalles().size()][4];
+
+        for (int i = 0; i < oc.getDetalles().size(); i++) {
+            DetalleOrdenCompra d = oc.getDetalles().get(i);
+            datos[i][0] = d.getInsumo() != null ? d.getInsumo().getIdInsumo() : "";
+            datos[i][1] = d.getInsumo() != null ? d.getInsumo().getNombre() : "";
+            datos[i][2] = d.getCantidad(); // solicitado (no editable)
+
+            // CAMBIO CLAVE: usar getCantidadRecibida() si ya fue procesada
+            int cantidadMostrar = d.getCantidad(); // por defecto mostrar lo solicitado
+            if (d.getCantidadRecibida() > 0) {
+                // Si ya se procesó y hay cantidad recibida registrada, mostrar esa
+                cantidadMostrar = d.getCantidadRecibida();
+            } else if ("PENDIENTE".equalsIgnoreCase(r.getEstado())) {
+                // Si está PENDIENTE, inicializar con lo solicitado para permitir edición
+                cantidadMostrar = d.getCantidad();
+            }
+            datos[i][3] = cantidadMostrar;
+        }
+
+        DefaultTableModel modelo = new DefaultTableModel(datos, columnas) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                // Solo columna "Entregado" (3) es editable, y solo si está PENDIENTE o INCOMPLETA
+                return column == 3 && (r.getEstado().equalsIgnoreCase("PENDIENTE") || r.getEstado().equalsIgnoreCase("INCOMPLETA"));
+            }
+
+            @Override
+            public Class<?> getColumnClass(int columnIndex) {
+                return columnIndex >= 2 ? Integer.class : String.class;
             }
         };
 
-        if (oc != null && oc.getDetalles() != null) {
-            for (DetalleOrdenCompra d : oc.getDetalles()) {
-                String idIn = d.getInsumo() != null ? d.getInsumo().getIdInsumo() : "";
-                String nombre = d.getInsumo() != null ? d.getInsumo().getNombre() : "";
-                int pedida = d.getCantidad();
-                int recibidoDefault = pedida; // valor por defecto sugerido
-                model.addRow(new Object[]{ idIn, nombre, pedida, recibidoDefault });
-            }
-        }
-
-        tablaDetallesOrden.setModel(model);
+        tablaDetallesOrden.setModel(modelo);
     }
-
-
 }

@@ -11,7 +11,9 @@ public class Pago implements Serializable {
     private int propina;        // Propina opcional
     private int vuelto;         // Solo para efectivo
     private boolean procesado;  // Si ya se procesó el pago
+    private int montoProcesado; // monto efectivamente recibido (efectivo entregado)
     private Pedido pedidoAsociado;  // Referencia al pedido
+    private String tipoDocumento; // "Boleta" o "Factura" (nuevo)
 
     // Constructor principal
     public Pago(String idPago, int monto, String metodoPago, int propina, Pedido pedido) {
@@ -23,6 +25,7 @@ public class Pago implements Serializable {
         this.fechaHora = new Date();
         this.vuelto = 0;
         this.procesado = false;
+        this.tipoDocumento = null;
     }
 
     // Constructor simplificado
@@ -31,28 +34,20 @@ public class Pago implements Serializable {
     }
 
     // Método para procesar el pago
-    public boolean procesarPago(int montoEntregado) throws Exception {
-        if (procesado) {
-            throw new Exception("El pago ya fue procesado anteriormente");
-        }
-
-        switch (metodoPago.toUpperCase()) {
-            case "EFECTIVO":
-                return procesarEfectivo(montoEntregado);
-
-            case "TARJETA":
-            case "TRANSFERENCIA":
-                // Para tarjeta/transferencia, asumimos que el pago es exacto
-                this.procesado = true;
-                this.vuelto = 0;
-                return true;
-
-            default:
-                throw new Exception("Método de pago no válido: " + metodoPago);
-        }
+    // Procesar pago sin monto entregado (tarjeta/transferencia o pago ya conocido)
+    public void procesarPago() {
+        this.montoProcesado = this.monto;
+        this.vuelto = 0;
+        this.procesado = true;
     }
 
-    // Procesar pago en efectivo
+    public void procesarPago(int montoEntregado) {
+        this.montoProcesado = montoEntregado;
+        this.vuelto = Math.max(0, montoEntregado - this.monto - this.propina);
+        this.procesado = true;
+    }
+
+    // Procesar pago en efectivo (método auxiliar; puede lanzar excepción si necesario)
     private boolean procesarEfectivo(int montoEntregado) throws Exception {
         if (montoEntregado < monto + propina) {
             throw new Exception("Dinero insuficiente. Total: $" + getTotalAPagar() +
@@ -60,6 +55,7 @@ public class Pago implements Serializable {
         }
 
         this.vuelto = montoEntregado - (monto + propina);
+        this.montoProcesado = montoEntregado;
         this.procesado = true;
         return true;
     }
@@ -85,7 +81,7 @@ public class Pago implements Serializable {
         return procesado;
     }
 
-    // Getters y Setters adicionales
+    // Getters y Setters
     public Pedido getPedidoAsociado() {
         return pedidoAsociado;
     }
@@ -102,7 +98,6 @@ public class Pago implements Serializable {
         this.procesado = procesado;
     }
 
-    // Getters y Setters antiguos
     public String getIdPago() { return idPago; }
     public void setIdPago(String idPago) { this.idPago = idPago; }
 
@@ -121,10 +116,26 @@ public class Pago implements Serializable {
     public int getVuelto() { return vuelto; }
     public void setVuelto(int vuelto) { this.vuelto = vuelto; }
 
+    public int getMontoProcesado() {
+        return montoProcesado;
+    }
+    public void setMontoProcesado(int montoProcesado) {
+        this.montoProcesado = montoProcesado;
+    }
+
+    public String getTipoDocumento() {
+        return tipoDocumento;
+    }
+
+    public void setTipoDocumento(String tipoDocumento) {
+        this.tipoDocumento = tipoDocumento;
+    }
+
     @Override
     public String toString() {
         return "Pago [" + idPago + "] " + metodoPago +
                 " - Total: $" + getTotalPagado() +
-                " - Estado: " + (procesado ? "PROCESADO" : "PENDIENTE");
+                " - Estado: " + (procesado ? "PROCESADO" : "PENDIENTE") +
+                (tipoDocumento != null ? " - Doc: " + tipoDocumento : "");
     }
 }

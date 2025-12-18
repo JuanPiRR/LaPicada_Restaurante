@@ -38,9 +38,14 @@ public class panelPedidos extends JPanel {
     private JButton pagarPedidoButton;
     private JButton pedidoListoButton;
     private JButton pedidoEntregadoButton;
+    private JButton nuevaMesaButton;
+    private JButton nuevoGarzónButton;
+    private boolean suppressMesaNotifications = true;
+
 
     private CardLayout parentCardLayout;
     private JPanel parentContentPanel;
+
 
 
     public panelPedidos(VistaPrincipal mainFrame, CardLayout cl, JPanel contentPanel) {
@@ -63,6 +68,20 @@ public class panelPedidos extends JPanel {
 
         // Inicializar listeners (incluye wiring de botones)
         initListeners();
+        // Filtrar platos por categoría
+        if (comboCategorias != null) {
+            // poblar con categorías únicas
+            comboCategorias.removeAllItems();
+            comboCategorias.addItem("Todas");
+            List<String> categorias = controladorPicada.obtenerCategoriasUnicas();
+            if (categorias != null) {
+                for (String c : categorias) comboCategorias.addItem(c);
+            }
+            comboCategorias.setSelectedIndex(0);
+
+            // listener que usa el método filtrarPlatos()
+            comboCategorias.addActionListener(e -> filtrarPlatos());
+        }
 
         // Volver
         if (volverButton != null) {
@@ -70,6 +89,8 @@ public class panelPedidos extends JPanel {
                 parentCardLayout.show(parentContentPanel, "MENU_PRINCIPAL");
             });
         }
+        this.suppressMesaNotifications = false;
+
 
     }
 
@@ -332,10 +353,12 @@ public class panelPedidos extends JPanel {
                     if (btnEliminarDelPedido != null) btnEliminarDelPedido.setEnabled(true);
                     if (confirmarPedidoButton != null) confirmarPedidoButton.setEnabled(true);
 
-                    // Actualizar tablas/labels
+                    // Actualizar tablas/labels: suprimir notificaciones de combo mientras se recarga
+                    this.suppressMesaNotifications = true;
                     actualizarComboMesas();
                     controladorPicada.cargarTablaPedidoActual(tablaPedidoActual);
                     if (lblTotal != null) lblTotal.setText("Total: $" + controladorPicada.getTotalPedidoActual());
+                    this.suppressMesaNotifications = false;
 
                     JOptionPane.showMessageDialog(this, "Atención iniciada.", "Éxito", JOptionPane.INFORMATION_MESSAGE);
                 } catch (Exception ex) {
@@ -345,8 +368,15 @@ public class panelPedidos extends JPanel {
         }
 
         // Listener específico para cambios en la caja de mesas (verifica estado DISPONIBLE)
+
         ItemListener comboMesaListener = e -> {
             if (e.getStateChange() != java.awt.event.ItemEvent.SELECTED) return;
+
+            if (suppressMesaNotifications) {
+                // durante la inicialización no mostrar mensajes; solo actualizar estado de botones
+                actualizarEstadoIniciar();
+                return;
+            }
 
             Object sel = BoxMesas != null ? BoxMesas.getSelectedItem() : null;
             if (sel == null) {
@@ -359,21 +389,21 @@ public class panelPedidos extends JPanel {
                 numeroMesa = Integer.parseInt(sel.toString());
             } catch (NumberFormatException ex) {
                 try {
-                    // Si se usan objetos Mesa en el combo, extraer getNumero por reflexión
                     java.lang.reflect.Method m = sel.getClass().getMethod("getNumero");
                     Object val = m.invoke(sel);
                     if (val instanceof Integer) numeroMesa = (Integer) val;
                     else numeroMesa = Integer.parseInt(val.toString());
-                } catch (Exception ignored) { }
+                } catch (Exception ignored) {
+                }
             }
 
             if (numeroMesa != -1) {
-                final int mesaNum = numeroMesa; // hacerla effectively final
+                final int mesaNum = numeroMesa;
                 Mesa m = controladorPicada.getMesas().stream()
                         .filter(x -> x.getNumero() == mesaNum)
                         .findFirst()
                         .orElse(null);
-                if (m != null && !"DISPONIBLE".equalsIgnoreCase(m.getEstado())) {
+                if (m != null && ("OCUPADO".equalsIgnoreCase(m.getEstado()))) {
                     if (iniciarPedidoButton != null) iniciarPedidoButton.setEnabled(false);
                     JOptionPane.showMessageDialog(this,
                             "La mesa seleccionada está ocupada. No se puede iniciar atención.",
@@ -463,6 +493,7 @@ public class panelPedidos extends JPanel {
                 }
             });
         }
+
         if (pedidoListoButton != null) {
             pedidoListoButton.addActionListener(ev -> {
                 int filaSel = tablaPedidosConfirmados != null ? tablaPedidosConfirmados.getSelectedRow() : -1;
@@ -507,6 +538,40 @@ public class panelPedidos extends JPanel {
         }
         if (pagarPedidoButton != null) {
             pagarPedidoButton.addActionListener(ev -> pagarPedido());
+        }
+
+        if (tablaPedidosConfirmados != null) {
+            tablaPedidosConfirmados.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    if (e.getClickCount() != 2) return; // sólo doble click
+                    int filaSel = tablaPedidosConfirmados.getSelectedRow();
+                    if (filaSel == -1) return;
+                    int modelRow = tablaPedidosConfirmados.convertRowIndexToModel(filaSel);
+                    Object idObj = tablaPedidosConfirmados.getModel().getValueAt(modelRow, 0);
+                    if (idObj == null) return;
+                    String idPedido = idObj.toString();
+
+                    try {
+                        // Mostrar automáticamente el comprobante según el tipo guardado en el Pago
+                        String comprobante = controladorPicada.obtenerComprobanteAutodetect(idPedido);
+                        if (comprobante == null || comprobante.trim().isEmpty()) {
+                            JOptionPane.showMessageDialog(panelPedidos.this, "No hay comprobante disponible para este pedido.", "Atención", JOptionPane.INFORMATION_MESSAGE);
+                            return;
+                        }
+
+                        JTextArea ta = new JTextArea(comprobante);
+                        ta.setEditable(false);
+                        ta.setFont(new java.awt.Font("Monospaced", java.awt.Font.PLAIN, 12));
+                        JScrollPane scroll = new JScrollPane(ta);
+                        scroll.setPreferredSize(new Dimension(400, 400));
+                        JOptionPane.showMessageDialog(panelPedidos.this, scroll, "Comprobante - " + idPedido, JOptionPane.INFORMATION_MESSAGE);
+
+                    } catch (Exception ex) {
+                        JOptionPane.showMessageDialog(panelPedidos.this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                    }
+                }
+            });
         }
         // Botones de acciones sobre pedidos confirmados
         if (iniciarPreparaciónButton != null) {
@@ -562,10 +627,135 @@ public class panelPedidos extends JPanel {
                 }
             });
         }
+
+        if (nuevaMesaButton != null) {
+            nuevaMesaButton.addActionListener(ev -> {
+                JPanel panel = new JPanel(new GridLayout(0, 2, 6, 6));
+                panel.add(new JLabel("Número de mesa:"));
+                JSpinner spNumero = new JSpinner(new SpinnerNumberModel(1, 1, 999, 1));
+                panel.add(spNumero);
+                panel.add(new JLabel("Capacidad:"));
+                JSpinner spCapacidad = new JSpinner(new SpinnerNumberModel(4, 1, 50, 1));
+                panel.add(spCapacidad);
+                panel.add(new JLabel("Estado:"));
+                JComboBox<String> cbEstado = new JComboBox<>(new String[]{"DISPONIBLE", "OCUPADA", "RESERVADA"});
+                panel.add(cbEstado);
+
+                int opcion = JOptionPane.showConfirmDialog(this, panel, "Crear nueva mesa", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+                if (opcion != JOptionPane.OK_OPTION) return;
+
+                int numero = (Integer) spNumero.getValue();
+                int capacidad = (Integer) spCapacidad.getValue();
+                String estado = cbEstado.getSelectedItem().toString();
+
+                try {
+                    controladorPicada.agregarMesa(numero, capacidad, estado);
+                    // actualizar UI relacionada
+                    this.suppressMesaNotifications = true;
+                    actualizarComboMesas();
+                    this.suppressMesaNotifications = false;
+                    JOptionPane.showMessageDialog(this, "Mesa creada correctamente.", "Éxito", JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(this, "Error al crear mesa: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            });
         }
+
+// Botón para crear nuevo garzón
+        if (nuevoGarzónButton != null) {
+            nuevoGarzónButton.addActionListener(ev -> {
+                JPanel panel = new JPanel(new GridLayout(0, 2, 6, 6));
+                panel.add(new JLabel("ID Garzón:"));
+                JTextField tfId = new JTextField();
+                panel.add(tfId);
+                panel.add(new JLabel("Nombre:"));
+                JTextField tfNombre = new JTextField();
+                panel.add(tfNombre);
+                panel.add(new JLabel("Turno:"));
+                JComboBox<String> cbTurno = new JComboBox<>(new String[]{"Mañana", "Tarde"});
+                panel.add(cbTurno);
+
+                int opcion = JOptionPane.showConfirmDialog(this, panel, "Crear nuevo garzón", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+                if (opcion != JOptionPane.OK_OPTION) return;
+
+                String idGarzon = tfId.getText().trim();
+                String nombre = tfNombre.getText().trim();
+                String turno = cbTurno.getSelectedItem() != null ? cbTurno.getSelectedItem().toString() : "";
+
+                if (idGarzon.isEmpty() || nombre.isEmpty()) {
+                    JOptionPane.showMessageDialog(this, "ID y Nombre son obligatorios.", "Atención", JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+
+                try {
+                    controladorPicada.agregarGarzon(idGarzon, nombre, turno);
+                    actualizarComboGarzones();
+                    JOptionPane.showMessageDialog(this, "Garzón agregado correctamente.", "Éxito", JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(this, "Error al agregar garzón: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            });
+        }
+    }
     private void actualizarEstadoIniciar() {
         boolean mesaSeleccionada = BoxMesas != null && BoxMesas.getSelectedItem() != null;
         boolean garzonSeleccionado = BoxGarzones != null && BoxGarzones.getSelectedItem() != null;
         if (iniciarPedidoButton != null) iniciarPedidoButton.setEnabled(mesaSeleccionada && garzonSeleccionado);
+    }
+    private void mostrarComprobantePedido(String idPedido) {
+        if (controladorPicada == null || idPedido == null) return;
+
+        String[] posiblesNombres = {
+                "obtenerComprobantePedido",
+                "generarComprobantePedido",
+                "obtenerBoletaFactura",
+                "getComprobantePedido"
+        };
+
+        try {
+            Object resultado = null;
+            for (String nombre : posiblesNombres) {
+                try {
+                    // buscar método con parámetro String
+                    java.lang.reflect.Method m = controladorPicada.getClass().getMethod(nombre, String.class);
+                    resultado = m.invoke(controladorPicada, idPedido);
+                    if (resultado != null) break;
+                } catch (NoSuchMethodException ignored) {
+                    try {
+                        // buscar método sin parámetros (por si lo implementaron así)
+                        java.lang.reflect.Method m2 = controladorPicada.getClass().getMethod(nombre);
+                        resultado = m2.invoke(controladorPicada);
+                        if (resultado != null) break;
+                    } catch (NoSuchMethodException ignored2) { /* seguir buscando */ }
+                }
+            }
+
+            if (resultado == null) {
+                JOptionPane.showMessageDialog(this,
+                        "No se encontró el comprobante en el controlador. Añada un método para obtener la boleta/factura.",
+                        "No disponible", JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+
+            String texto;
+            if (resultado instanceof String) {
+                texto = (String) resultado;
+            } else {
+                texto = resultado.toString();
+            }
+
+            JTextArea area = new JTextArea(texto);
+            area.setEditable(false);
+            area.setLineWrap(true);
+            area.setWrapStyleWord(true);
+            JScrollPane scroll = new JScrollPane(area);
+            scroll.setPreferredSize(new Dimension(700, 500));
+            JOptionPane.showMessageDialog(this, scroll, "Comprobante Pedido " + idPedido, JOptionPane.INFORMATION_MESSAGE);
+
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Error al obtener el comprobante: " + ex.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
     }
 }

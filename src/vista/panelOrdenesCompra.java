@@ -175,55 +175,37 @@ public class panelOrdenesCompra extends JPanel {
     private void nuevaOrdenCompra() {
         List<Proveedor> proveedores = controladorPicada.getProveedores();
         if (proveedores == null || proveedores.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "No hay proveedores disponibles.", "Información", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "No hay proveedores registrados.", "Atención", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
         JComboBox<String> cbProv = new JComboBox<>();
-        for (Proveedor p : proveedores) cbProv.addItem(p.getIdProveedor());
+        for (Proveedor p : proveedores) cbProv.addItem(p.getIdProveedor() + " - " + p.getNombre());
 
         int opt = JOptionPane.showConfirmDialog(this, new Object[]{"Proveedor:", cbProv}, "Nueva Orden de Compra", JOptionPane.OK_CANCEL_OPTION);
         if (opt == JOptionPane.OK_OPTION) {
-            String idProv = (String) cbProv.getSelectedItem();
             try {
-                OrdenCompra nueva = controladorPicada.crearOrdenCompra(idProv);
-                JOptionPane.showMessageDialog(this, "Orden creada: " + nueva.getIdOrden(), "Éxito", JOptionPane.INFORMATION_MESSAGE);
+                // Extraer solo el ID (antes del " - ")
+                String seleccion = (String) cbProv.getSelectedItem();
+                if (seleccion == null) throw new Exception("No se seleccionó proveedor.");
 
-                // Actualizar tabla y seleccionar la fila recién creada para evitar el mensaje de "Seleccione una orden primero"
+                String idProveedor = seleccion.split(" - ")[0].trim();
+
+                controladorPicada.crearOrdenCompra(idProveedor);
                 actualizarTabla();
-
-                if (tablaOrdenes != null && tablaOrdenes.getModel() != null) {
-                    DefaultTableModel model = (DefaultTableModel) tablaOrdenes.getModel();
-                    int foundRow = -1;
-                    for (int i = 0; i < model.getRowCount(); i++) {
-                        Object val = model.getValueAt(i, 0);
-                        if (val != null && nueva.getIdOrden().equals(String.valueOf(val))) {
-                            foundRow = i;
-                            break;
-                        }
-                    }
-                    if (foundRow >= 0) {
-                        tablaOrdenes.setRowSelectionInterval(foundRow, foundRow);
-                        // Asegura que la fila sea visible
-                        Rectangle rect = tablaOrdenes.getCellRect(foundRow, 0, true);
-                        tablaOrdenes.scrollRectToVisible(rect);
-                        cargarDetallesOrdenCompra();
-                    } else {
-                        // Si por alguna razón no se encontró, no llamar a cargarDetallesOrdenCompra()
-                    }
-                }
+                JOptionPane.showMessageDialog(this, "Orden creada exitosamente.", "Éxito", JOptionPane.INFORMATION_MESSAGE);
             } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this, "Error creando orden: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
             }
         }
     }
-
     private void agregarInsumoOrdenCompra() {
         int row = tablaOrdenes.getSelectedRow();
         if (row < 0) {
             JOptionPane.showMessageDialog(this, "Seleccione una orden.", "Atención", JOptionPane.WARNING_MESSAGE);
             return;
         }
+
         String idOrden = (String) tablaOrdenes.getModel().getValueAt(row, 0);
         OrdenCompra oc = getOrdenById(idOrden);
         if (oc == null) {
@@ -231,39 +213,47 @@ public class panelOrdenesCompra extends JPanel {
             return;
         }
         if (!"PENDIENTE".equals(oc.getEstado())) {
-            JOptionPane.showMessageDialog(this, "Sólo se pueden agregar insumos a órdenes PENDIENTE.", "Atención", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Solo se pueden agregar insumos a órdenes PENDIENTES.", "Atención", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
         List<Insumo> insumos = controladorPicada.getInsumos();
         if (insumos == null || insumos.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "No hay insumos disponibles.", "Información", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "No hay insumos registrados.", "Atención", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
         JComboBox<String> cbInsumo = new JComboBox<>();
-        for (Insumo i : insumos) cbInsumo.addItem(i.getIdInsumo());
+        for (Insumo i : insumos) cbInsumo.addItem(i.getIdInsumo() + " - " + i.getNombre());
 
         JTextField tfCantidad = new JTextField();
         JTextField tfPrecio = new JTextField();
 
-        Object[] message = {"Insumo (ID):", cbInsumo, "Cantidad:", tfCantidad, "Precio unitario:", tfPrecio};
-        int opt = JOptionPane.showConfirmDialog(this, message, "Agregar Insumo a Orden", JOptionPane.OK_CANCEL_OPTION);
+        Object[] mensaje = {
+                "Insumo:", cbInsumo,
+                "Cantidad:", tfCantidad,
+                "Precio Unitario:", tfPrecio
+        };
+
+        int opt = JOptionPane.showConfirmDialog(this, mensaje, "Agregar Insumo a Orden", JOptionPane.OK_CANCEL_OPTION);
         if (opt == JOptionPane.OK_OPTION) {
-            String idInsumo = (String) cbInsumo.getSelectedItem();
             try {
+                // Extraer solo el ID (antes del " - ")
+                String seleccion = (String) cbInsumo.getSelectedItem();
+                if (seleccion == null) throw new Exception("No se seleccionó insumo.");
+
+                String idInsumo = seleccion.split(" - ")[0].trim();
+
                 int cantidad = Integer.parseInt(tfCantidad.getText().trim());
                 double precio = Double.parseDouble(tfPrecio.getText().trim());
-                if (cantidad <= 0 || precio < 0) throw new NumberFormatException("Valores inválidos");
+
                 controladorPicada.agregarInsumosAOrden(idOrden, idInsumo, cantidad, precio);
-                JOptionPane.showMessageDialog(this, "Insumo agregado.", "Éxito", JOptionPane.INFORMATION_MESSAGE);
-                actualizarTabla();
-                // No es necesario llamar a cargarDetallesOrdenCompra() aquí porque la selección actual se restaura en actualizarTabla()
                 cargarDetallesOrdenCompra();
-            } catch (NumberFormatException nfe) {
-                JOptionPane.showMessageDialog(this, "Cantidad o precio inválido.", "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Insumo agregado exitosamente.", "Éxito", JOptionPane.INFORMATION_MESSAGE);
+            } catch (NumberFormatException e) {
+                JOptionPane.showMessageDialog(this, "Cantidad y precio deben ser valores numéricos.", "Error", JOptionPane.ERROR_MESSAGE);
             } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this, "Error al agregar insumo: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
             }
         }
     }
@@ -476,5 +466,6 @@ public class panelOrdenesCompra extends JPanel {
             }
         }
     }
+
 
 }

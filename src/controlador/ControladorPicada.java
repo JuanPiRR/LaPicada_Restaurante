@@ -158,9 +158,10 @@ public class ControladorPicada {
         Garzon garzon = buscarGarzon(idGarzon);
 
         if (mesa == null || garzon == null) throw new Exception("Mesa o Garzón no encontrados.");
-        if (!mesa.getEstado().equals("DISPONIBLE")) throw new Exception("La mesa está ocupada.");
+        // Aceptar tanto DISPONIBLE como RESERVADA como válidas para iniciar atención
+        if (!"DISPONIBLE".equalsIgnoreCase(mesa.getEstado()) && !"RESERVADA".equalsIgnoreCase(mesa.getEstado()))
+            throw new Exception("La mesa no está disponible.");
 
-        // Buscar o crear cliente solo si se entrega un RUT no vacío
         Cliente cliente = null;
         if (rutCliente != null && !rutCliente.trim().isEmpty()) {
             cliente = buscarCliente(rutCliente);
@@ -168,15 +169,11 @@ public class ControladorPicada {
                 cliente = new Cliente(rutCliente, nombreCliente != null ? nombreCliente : "");
                 clientes.add(cliente);
             }
-        } // si rutCliente es nulo/vacío, cliente queda en null (opcional)
+        }
 
-        // Cambiar el estado de la mesa
         mesa.setEstado("OCUPADA");
-
-        // Crear el encabezado del Pedido (cliente puede ser null)
         pedidoActual = new Pedido(generarIdPedido(), new Date(), "ABIERTO", mesa, garzon, cliente);
     }
-
     // 2. Agregar platos al pedido (es como tomar la orden)
     public void agregarPlatoAlPedido(String idPlato, int cantidad, String observaciones) throws Exception {
         if (pedidoActual == null) throw new Exception("No hay una atención iniciada.");
@@ -205,7 +202,7 @@ public class ControladorPicada {
             }
         }
 
-        // Descontar stock al confirmar
+        // Descontar stock en el momento de confirmar el pedido (ahora)
         for (DetallePedido det : pedidoActual.getDetalles()) {
             Plato plato = det.getPlato();
             if (plato != null) {
@@ -221,7 +218,6 @@ public class ControladorPicada {
         guardarDatosPersistentes();
         pedidoActual = null;
     }
-
     // 4. Finalizar Atención y Pagar (Garzón entrega boleta)
     public void finalizarYPagart(String metodoPago, int montoEntregado) throws Exception {
         if (pedidoActual == null) throw new Exception("No hay pedido activo.");
@@ -249,6 +245,7 @@ public class ControladorPicada {
         pedidoActual = null;
         guardarDatosPersistentes();
     }
+
 
     //Metodos para gestion de Insumos
     //Gestion de Insumos
@@ -367,7 +364,10 @@ public class ControladorPicada {
     }
 
     public List<Mesa> getMesasDisponibles() {
-        return mesas.stream().filter(m -> m.getEstado().equals("DISPONIBLE")).collect(Collectors.toList());
+        // Considerar RESERVADA igual que DISPONIBLE para listados de mesas "disponibles"
+        return mesas.stream()
+                .filter(m -> "DISPONIBLE".equalsIgnoreCase(m.getEstado()) || "RESERVADA".equalsIgnoreCase(m.getEstado()))
+                .collect(Collectors.toList());
     }
 
     public List<Garzon> getGarzones() {
@@ -740,7 +740,7 @@ public class ControladorPicada {
         if (oc == null) throw new Exception("Orden asociada a la recepción no encontrada.");
         if (oc.getDetalles() != null) {
             for (DetalleOrdenCompra d : oc.getDetalles()) {
-                int cantidadRecibida = d.getCantidad(); // en panelRecepciones ya se actualizó d.setCantidad(...)
+                int cantidadRecibida = d.getCantidadRecibida(); // Usar el campo separado
                 if (cantidadRecibida <= 0) continue;
 
                 Insumo ref = d.getInsumo();
@@ -748,7 +748,6 @@ public class ControladorPicada {
                 if (ref != null) ins = buscarInsumo(ref.getIdInsumo());
 
                 if (ins == null) {
-                    // Crear insumo mínimo si no existe (atributos básicos desde el detalle si están)
                     String id = ref != null && ref.getIdInsumo() != null ? ref.getIdInsumo() : "I-" + System.currentTimeMillis();
                     String nombre = ref != null ? ref.getNombre() : "";
                     String categoria = ref != null ? ref.getCategoria() : "";
@@ -757,17 +756,15 @@ public class ControladorPicada {
                     insumos.add(ins);
                 }
 
-                // Sumar stock y actualizar precio unitario con el precio recibido
+                // Sumar solo la cantidad RECIBIDA al inventario
                 ins.agregarStock(cantidadRecibida);
                 if (d.getPrecioUnitario() >= 0) ins.setPrecioUnitario(d.getPrecioUnitario());
             }
         }
 
-        // Actualizar estados
         r.setEstado(estadoFinal);
         oc.cambiarEstado("RECIBIDA");
 
-        // Persistir y notificar listeners
         guardarDatosPersistentes();
     }
 
@@ -927,42 +924,11 @@ public class ControladorPicada {
         if (pedido == null) throw new Exception("Pedido no encontrado.");
         if (!"ABIERTO".equalsIgnoreCase(pedido.getEstado())) throw new Exception("Sólo pedidos en estado ABIERTO pueden iniciar preparación.");
 
-        // Validar stock antes de descontar
-        for (DetallePedido det : pedido.getDetalles()) {
-            Plato plato = det.getPlato();
-            if (plato == null) continue;
-            if (plato.getDisponibilidad() < det.getCantidad()) {
-                throw new Exception("Stock insuficiente para: " + plato.getNombre());
-            }
-        }
-
-        // Descontar stock
-        for (DetallePedido det : pedido.getDetalles()) {
-            Plato plato = det.getPlato();
-            if (plato != null) {
-                plato.restarStock(det.getCantidad());
-            }
-        }
-
+        // Ya se descontó stock al confirmar el pedido, por tanto aquí solo cambiar estado
         pedido.setEstado("EN_PREPARACION");
         guardarDatosPersistentes();
     }
 
-    public void eliminarPedido(String idPedido) {
-        Pedido pedido = pedidos.stream()
-                .filter(p -> p.getIdPedido().equals(idPedido))
-                .findFirst()
-                .orElse(null);
-
-        if (pedido != null) {
-            // Liberar mesa si aplica
-            Mesa m = pedido.getMesa();
-            if (m != null) m.setEstado("DISPONIBLE");
-
-            pedidos.remove(pedido);
-            guardarDatosPersistentes();
-        }
-    }
 
     public void procesarPagoPedido(String idPedido, VistaPrincipal mainFrame, CardLayout parentCardLayout, JPanel parentContentPanel) {
         Pedido pedido = pedidos.stream()
@@ -985,54 +951,72 @@ public class ControladorPicada {
             return;
         }
 
-        final int total = pedido.calcularTotal();
-        final int sugerido10 = (int) Math.round(total * 0.10);
+        final int subtotal = pedido.calcularTotal();
+        final int sugerido10 = (int) Math.round(subtotal * 0.10);
 
-        // Componentes del panel único
-        JPanel panel = new JPanel(new GridLayout(7, 2, 6, 6));
-        panel.add(new JLabel("Total pedido:"));
-        JLabel lblTotal = new JLabel("$" + total);
-        panel.add(lblTotal);
+        // Componentes del panel
+        JPanel panel = new JPanel(new GridLayout(0, 2, 6, 6));
+
+        panel.add(new JLabel("Subtotal:"));
+        JLabel lblSubtotal = new JLabel("$" + subtotal);
+        panel.add(lblSubtotal);
 
         panel.add(new JLabel("Método de pago:"));
         JComboBox<String> cbMetodo = new JComboBox<>(new String[]{"EFECTIVO", "TARJETA", "TRANSFERENCIA"});
         panel.add(cbMetodo);
 
+        panel.add(new JLabel("Monto entregado (solo EFECTIVO):"));
+        SpinnerNumberModel modeloMonto = new SpinnerNumberModel(subtotal + sugerido10, 0, 10_000_000, 100);
+        JSpinner spMonto = new JSpinner(modeloMonto);
+        panel.add(spMonto);
+
         panel.add(new JLabel("Tipo de documento:"));
         JComboBox<String> cbTipoBoleta = new JComboBox<>(new String[]{"Boleta", "Factura"});
         panel.add(cbTipoBoleta);
 
-        JCheckBox chkPropina10 = new JCheckBox("Agregar propina 10% (sugerida)");
-        chkPropina10.setSelected(true);
-        panel.add(chkPropina10);
-        JSpinner spPropina = new JSpinner(new SpinnerNumberModel(sugerido10, 0, 1_000_000, 100));
+        panel.add(new JLabel("Agregar propina (opcional):"));
+        JCheckBox chkPropina = new JCheckBox("Activar propina");
+        panel.add(chkPropina);
+
+        panel.add(new JLabel("Propina seleccionada:"));
+        JSpinner spPropina = new JSpinner(new SpinnerNumberModel(0, 0, 1_000_000, 100));
         spPropina.setEnabled(false);
         panel.add(spPropina);
 
-        panel.add(new JLabel("Propina seleccionada:"));
-        JLabel lblPropina = new JLabel("$" + sugerido10);
-        panel.add(lblPropina);
+        panel.add(new JLabel("Total a pagar:"));
+        JLabel lblTotal = new JLabel("$" + subtotal);
+        panel.add(lblTotal);
 
-        panel.add(new JLabel("Monto entregado (solo EFECTIVO):"));
-        SpinnerNumberModel modeloMonto = new SpinnerNumberModel(total + sugerido10, 0, 10_000_000, 100);
-        JSpinner spMonto = new JSpinner(modeloMonto);
-        panel.add(spMonto);
+        // Inicial estado según método por defecto EFECTIVO -> habilitar monto solo si EFECTIVO
+        boolean inicialEfectivo = "EFECTIVO".equalsIgnoreCase(cbMetodo.getSelectedItem().toString());
+        spMonto.setEnabled(inicialEfectivo);
 
-        // Listeners
-        chkPropina10.addItemListener(e -> {
-            boolean use10 = chkPropina10.isSelected();
-            spPropina.setEnabled(!use10);
-            int prop = use10 ? sugerido10 : (Integer) spPropina.getValue();
-            lblPropina.setText("$" + prop);
-            modeloMonto.setValue(total + prop);
+        // Listeners para comportamiento dinámico
+        cbMetodo.addActionListener(e -> {
+            String metodo = cbMetodo.getSelectedItem().toString();
+            boolean esEfectivo = "EFECTIVO".equalsIgnoreCase(metodo);
+            spMonto.setEnabled(esEfectivo);
+        });
+
+        chkPropina.addItemListener(e -> {
+            boolean marcado = chkPropina.isSelected();
+            spPropina.setEnabled(marcado);
+            if (!marcado) {
+                spPropina.setValue(0);
+            } else {
+                // si se activa por primera vez, sugerir 10%
+                if (((Integer) spPropina.getValue()) == 0) spPropina.setValue(sugerido10);
+            }
+            // actualizar total y monto sugerido
+            int prop = (Integer) spPropina.getValue();
+            lblTotal.setText("$" + (subtotal + prop));
+            modeloMonto.setValue(subtotal + prop);
         });
 
         spPropina.addChangeListener(e -> {
-            if (!chkPropina10.isSelected()) {
-                int prop = (Integer) spPropina.getValue();
-                lblPropina.setText("$" + prop);
-                modeloMonto.setValue(total + prop);
-            }
+            int prop = (Integer) spPropina.getValue();
+            lblTotal.setText("$" + (subtotal + prop));
+            modeloMonto.setValue(subtotal + prop);
         });
 
         int opcion = JOptionPane.showConfirmDialog(mainFrame, panel, "Procesar pago del pedido " + idPedido,
@@ -1041,27 +1025,50 @@ public class ControladorPicada {
 
         String metodo = cbMetodo.getSelectedItem().toString();
         String tipoDocumento = cbTipoBoleta.getSelectedItem().toString();
-        int propina = chkPropina10.isSelected() ? sugerido10 : (Integer) spPropina.getValue();
+        int propina = chkPropina.isSelected() ? (Integer) spPropina.getValue() : 0;
         int montoEntregado = (Integer) spMonto.getValue();
 
         try {
-            // crear pago y calcular total a pagar
-            Pago pago = pedido.crearPago(metodo, propina);
-            int totalAPagar = pedido.calcularTotal() + propina;
+            int totalAPagar = subtotal + propina;
+
+            // Asegurar que exista un Pago asociado al pedido con método, propina y tipoDocumento correctos
+            if (pedido.getPago() == null) {
+                try {
+                    // intentar crear el pago en el pedido (si la clase Pedido define crearPago)
+                    pedido.crearPago(metodo, propina);
+                } catch (Exception exCrearPago) {
+                    // Si no es posible crear con crearPago(), crear manualmente un Pago mínimo
+                    try {
+                        Pago nuevo = new Pago(generarIdPago(), totalAPagar, metodo, propina, pedido);
+                        pedido.setPago(nuevo);
+                    } catch (Exception ex2) {
+                        JOptionPane.showMessageDialog(mainFrame, "No se pudo crear el pago: " + ex2.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                        return;
+                    }
+                }
+            }
+
+            // actualizar propiedades del pago (incluyendo tipo de documento)
+            Pago p = pedido.getPago();
+            p.setMetodoPago(metodo);
+            p.setPropina(propina);
+            p.setMonto(totalAPagar);
+            p.setTipoDocumento(tipoDocumento); // <-- guardar el tipo pedido por el cliente
 
             if ("EFECTIVO".equalsIgnoreCase(metodo)) {
                 if (montoEntregado < totalAPagar) {
-                    throw new Exception("Dinero insuficiente. Se requiere al menos $" + totalAPagar);
+                    JOptionPane.showMessageDialog(mainFrame, "Dinero insuficiente. Se requiere al menos $" + totalAPagar, "Error", JOptionPane.ERROR_MESSAGE);
+                    return;
                 }
                 pedido.procesarPago(montoEntregado);
             } else {
-                // para tarjeta/transferencia se procesa con el total
+                // para tarjeta/transferencia se procesa con el total (sin monto entregado)
                 pedido.procesarPago(totalAPagar);
             }
 
             guardarDatosPersistentes();
 
-            // Construir boleta para mostrar
+            // Construir comprobante
             StringBuilder sb = new StringBuilder();
             sb.append("----- ").append(tipoDocumento).append(" -----\n");
             sb.append("ID Pedido: ").append(pedido.getIdPedido()).append("\n");
@@ -1073,7 +1080,7 @@ public class ControladorPicada {
                 String nombre = d.getPlato() != null ? d.getPlato().getNombre() : "";
                 sb.append(String.format("%s x%d  = $%d\n", nombre, d.getCantidad(), d.getSubTotal()));
             }
-            sb.append("\nSubtotal: $").append(pedido.calcularTotal()).append("\n");
+            sb.append("\nSubtotal: $").append(subtotal).append("\n");
             sb.append("Propina: $").append(propina).append("\n");
             sb.append("Total a pagar: $").append(totalAPagar).append("\n");
             sb.append("Método: ").append(metodo).append("\n");
@@ -1107,12 +1114,17 @@ public class ControladorPicada {
         if (pedido == null) throw new Exception("Pedido no encontrado.");
         if ("PAGADO".equalsIgnoreCase(pedido.getEstado())) throw new Exception("No se puede editar un pedido ya pagado.");
 
-        // Restaurar stock previamente descontado (devolver lo que se había restado)
-        for (DetallePedido det : pedido.getDetalles()) {
-            Plato plato = det.getPlato();
-            if (plato != null) {
-                // usar set/get de disponibilidad (disponibilidad += cantidad)
-                plato.setDisponibilidad(plato.getDisponibilidad() + det.getCantidad());
+        // Restaurar stock si fue descontado previamente.
+        // Como ahora el descuento se hace al confirmar, considerar estados donde ya se realizó descuento:
+        boolean debeRestaurarStock = "ABIERTO".equalsIgnoreCase(pedido.getEstado())
+                || "EN_PREPARACION".equalsIgnoreCase(pedido.getEstado())
+                || "LISTO".equalsIgnoreCase(pedido.getEstado());
+        if (debeRestaurarStock) {
+            for (DetallePedido det : pedido.getDetalles()) {
+                Plato plato = det.getPlato();
+                if (plato != null) {
+                    plato.setDisponibilidad(plato.getDisponibilidad() + det.getCantidad());
+                }
             }
         }
 
@@ -1149,6 +1161,77 @@ public class ControladorPicada {
             throw new Exception("Sólo pedidos en LISTO pueden marcarse como ENTREGADO.");
         }
         pedido.setEstado("ENTREGADO");
+        guardarDatosPersistentes();
+    }
+    public String obtenerComprobante(String idPedido, String tipoDocumento) throws Exception {
+        Pedido pedido = pedidos.stream()
+                .filter(p -> p.getIdPedido().equals(idPedido))
+                .findFirst()
+                .orElse(null);
+
+        if (pedido == null) throw new Exception("Pedido no encontrado.");
+        // Verificar que tenga pago procesado o esté marcado como pagado
+        if (pedido.getPago() == null || !pedido.getPago().isProcesado()) {
+            throw new Exception("El pedido no está pagado o no tiene un pago procesado.");
+        }
+
+        Pago pago = pedido.getPago();
+        int subtotal = pedido.calcularTotal();
+        int propina = pago.getPropina();
+        int totalAPagar = subtotal + propina;
+        int vuelto = pago.getVuelto();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("----- ").append(tipoDocumento != null ? tipoDocumento : "Comprobante").append(" -----\n");
+        sb.append("ID Pedido: ").append(pedido.getIdPedido()).append("\n");
+        sb.append("Fecha: ").append(pedido.getFechaHora()).append("\n");
+        sb.append("Mesa: ").append(pedido.getMesa() != null ? pedido.getMesa().getNumero() : "").append("\n");
+        sb.append("Garzón: ").append(pedido.getGarzon() != null ? pedido.getGarzon().getNombre() : "").append("\n\n");
+        sb.append("Items:\n");
+        for (DetallePedido d : pedido.getDetalles()) {
+            String nombre = d.getPlato() != null ? d.getPlato().getNombre() : "";
+            sb.append(String.format("%s x%d  = $%d\n", nombre, d.getCantidad(), d.getSubTotal()));
+        }
+        sb.append("\nSubtotal: $").append(subtotal).append("\n");
+        sb.append("Propina: $").append(propina).append("\n");
+        sb.append("Total a pagar: $").append(totalAPagar).append("\n");
+        sb.append("Método: ").append(pago.getMetodoPago()).append("\n");
+        // Mostrar monto entregado / vuelto si están disponibles
+        if (pago.isProcesado()) {
+            sb.append("Monto entregado: $").append(pago.getMontoProcesado() > 0 ? pago.getMontoProcesado() : pago.getMonto()).append("\n");
+            sb.append("Vuelto: $").append(vuelto).append("\n");
+        }
+        return sb.toString();
+    }
+    public String obtenerComprobanteAutodetect(String idPedido) throws Exception {
+        Pedido pedido = pedidos.stream()
+                .filter(p -> p.getIdPedido().equals(idPedido))
+                .findFirst()
+                .orElse(null);
+
+        if (pedido == null) throw new Exception("Pedido no encontrado.");
+        if (pedido.getPago() == null || !pedido.getPago().isProcesado()) {
+            throw new Exception("El pedido no está pagado o no tiene un pago procesado.");
+        }
+
+        String tipo = pedido.getPago().getTipoDocumento();
+        if (tipo == null || tipo.trim().isEmpty()) {
+            // si no hay tipo explícito, usar un título genérico
+            tipo = "Comprobante";
+        }
+        return obtenerComprobante(idPedido, tipo);
+    }
+    public void agregarMesa(int numero, int capacidad, String estado) throws Exception {
+        if (mesas == null) mesas = new ArrayList<>();
+        if (buscarMesa(numero) != null) throw new Exception("La mesa ya existe.");
+        mesas.add(new Mesa(numero, capacidad, estado));
+        guardarDatosPersistentes();
+    }
+
+    public void agregarGarzon(String idGarzon, String nombre, String turno) throws Exception {
+        if (garzones == null) garzones = new ArrayList<>();
+        if (buscarGarzon(idGarzon) != null) throw new Exception("El garzón ya existe.");
+        garzones.add(new Garzon(idGarzon, nombre, turno));
         guardarDatosPersistentes();
     }
 

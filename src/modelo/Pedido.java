@@ -81,15 +81,19 @@ public class Pedido implements Serializable {
             throw new Exception("No hay pago asociado a este pedido");
         }
 
-        boolean resultado = pago.procesarPago(montoEntregado);
-        if (resultado) {
+        // procesarPago en Pago devuelve void; invocarlo y luego comprobar el estado
+        pago.procesarPago(montoEntregado);
+
+        if (pago.isProcesado()) {
             this.estado = "PAGADO";
             // Liberar la mesa automáticamente
             if (mesa != null) {
                 mesa.setEstado("DISPONIBLE");
             }
+            return true;
         }
-        return resultado;
+
+        return false;
     }
 
     // para verificar si el pedido está pagado

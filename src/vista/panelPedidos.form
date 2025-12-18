@@ -96,7 +96,7 @@
                 </properties>
                 <border type="none"/>
                 <children>
-                  <grid id="56302" layout-manager="GridLayoutManager" row-count="1" column-count="6" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
+                  <grid id="56302" layout-manager="GridLayoutManager" row-count="2" column-count="6" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
                     <margin top="0" left="0" bottom="0" right="0"/>
                     <constraints>
                       <grid row="1" column="0" row-span="1" col-span="1" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false"/>
@@ -201,6 +201,22 @@
                           </hspacer>
                         </children>
                       </grid>
+                      <component id="bbc20" class="javax.swing.JButton" binding="nuevaMesaButton" default-binding="true">
+                        <constraints>
+                          <grid row="1" column="2" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="0" fill="1" indent="0" use-parent-layout="false"/>
+                        </constraints>
+                        <properties>
+                          <text value="Nueva Mesa"/>
+                        </properties>
+                      </component>
+                      <component id="cbcdd" class="javax.swing.JButton" binding="nuevoGarzónButton" default-binding="true">
+                        <constraints>
+                          <grid row="1" column="4" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="0" fill="1" indent="0" use-parent-layout="false"/>
+                        </constraints>
+                        <properties>
+                          <text value="Nuevo Garzón"/>
+                        </properties>
+                      </component>
                     </children>
                   </grid>
                   <component id="e1d15" class="javax.swing.JLabel">
